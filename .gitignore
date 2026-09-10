@@ -1,0 +1,19 @@
+# Backend (Go)
+backend/bin/
+backend/tmp/
+backend/.env
+*.test
+
+# Frontend (Node)
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+frontend/.env.local
+frontend/coverage/
+frontend/*.tsbuildinfo
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

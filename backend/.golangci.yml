@@ -1,0 +1,23 @@
+run:
+  timeout: 5m
+
+linters:
+  disable-all: true
+  enable:
+    - unused
+    - govet
+    - staticcheck
+    - errcheck
+    - gofmt
+    - ineffassign
+    - gosimple
+    - bodyclose
+    - misspell
+
+linters-settings:
+  errcheck:
+    check-type-assertions: true
+
+issues:
+  exclude-dirs:
+    - migrations

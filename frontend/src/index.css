@@ -1,0 +1,8 @@
+/* Base reset is handled by MUI's <CssBaseline /> (see src/app/providers.tsx).
+   This file only holds the handful of things CssBaseline doesn't cover. */
+
+html,
+body,
+#root {
+  height: 100%;
+}
