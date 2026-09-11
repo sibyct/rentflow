@@ -6,11 +6,13 @@ import type { SxProps, Theme } from '@mui/material/styles';
 interface BrandMarkProps {
   size?: number;
   light?: boolean;
+  /** Renders just the logo square, no wordmark — for the collapsed nav rail. */
+  nameHidden?: boolean;
   sx?: SxProps<Theme>;
 }
 
-/** App logo mark + name, reused in RootLayout's nav bar and AuthLayout. */
-export function BrandMark({ size = 32, light = false, sx }: BrandMarkProps) {
+/** App logo mark + name, reused across auth pages and the app shell's sidebar. */
+export function BrandMark({ size = 32, light = false, nameHidden = false, sx }: BrandMarkProps) {
   return (
     <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', ...sx }}>
       <Box
@@ -30,9 +32,11 @@ export function BrandMark({ size = 32, light = false, sx }: BrandMarkProps) {
       >
         P
       </Box>
-      <Typography variant="h6" sx={{ fontWeight: 700, color: light ? 'common.white' : 'text.primary' }}>
-        PropertyManagement
-      </Typography>
+      {!nameHidden && (
+        <Typography variant="h6" sx={{ fontWeight: 700, color: light ? 'common.white' : 'text.primary' }}>
+          PropertyManagement
+        </Typography>
+      )}
     </Stack>
   );
 }

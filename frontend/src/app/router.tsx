@@ -1,14 +1,16 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
-import { RootLayout } from './layout/RootLayout';
+import { AppShell } from './layout/AppShell';
 import { AuthLayout } from './layout/AuthLayout';
 import { ProtectedRoute } from './layout/ProtectedRoute';
 import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
+import { DashboardPage } from './pages/DashboardPage';
 import { PropertiesPage } from './pages/PropertiesPage';
 import { NewPropertyPage } from './pages/NewPropertyPage';
 import { PropertyDetailPage } from './pages/PropertyDetailPage';
 import { NotFoundPage } from './pages/NotFoundPage';
+import { PlaceholderPage } from '@/shared/components';
 
 export function AppRouter() {
   return (
@@ -20,33 +22,30 @@ export function AppRouter() {
         <Route path="forgot-password" element={<ForgotPasswordPage />} />
       </Route>
 
-      <Route element={<RootLayout />}>
-        <Route index element={<Navigate to="/properties" replace />} />
+      {/* Authenticated app: one ProtectedRoute guarding the whole shell,
+          rather than repeating it on every route. */}
+      <Route
+        element={
+          // <ProtectedRoute>
+            <AppShell />
+          // </ProtectedRoute>
+        }
+      >
+        <Route index element={<Navigate to="/dashboard" replace />} />
+        <Route path="dashboard" element={<DashboardPage />} />
 
-        <Route
-          path="properties"
-          element={
-            <ProtectedRoute>
-              <PropertiesPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="properties/new"
-          element={
-            <ProtectedRoute>
-              <NewPropertyPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="properties/:id"
-          element={
-            <ProtectedRoute>
-              <PropertyDetailPage />
-            </ProtectedRoute>
-          }
-        />
+        <Route path="properties" element={<PropertiesPage />} />
+        <Route path="properties/new" element={<NewPropertyPage />} />
+        <Route path="properties/:id" element={<PropertyDetailPage />} />
+
+        {/* Nav destinations with no real feature yet — see navConfig.tsx
+            and README for how to replace one of these with a real page. */}
+        <Route path="units" element={<PlaceholderPage label="Units" />} />
+        <Route path="leases" element={<PlaceholderPage label="Leases" />} />
+        <Route path="residents" element={<PlaceholderPage label="Residents" />} />
+        <Route path="maintenance" element={<PlaceholderPage label="Maintenance" />} />
+        <Route path="vendors" element={<PlaceholderPage label="Vendors" />} />
+        <Route path="settings" element={<PlaceholderPage label="Settings" />} />
 
         <Route path="*" element={<NotFoundPage />} />
       </Route>

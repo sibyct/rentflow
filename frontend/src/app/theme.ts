@@ -27,11 +27,13 @@ export const theme = createTheme({
   spacing: 8,
   breakpoints: { values: { xs: 0, sm: 600, md: 900, lg: 1200, xl: 1536 } },
   typography: {
-    fontFamily: '"Roboto", "Helvetica", "Arial", sans-serif',
-    h1: { fontWeight: 700, fontSize: '3rem',    lineHeight: '3.5rem', letterSpacing: '-0.02em' },
-    h2: { fontWeight: 700, fontSize: '1.875rem', lineHeight: '2.375rem' },
-    h3: { fontWeight: 700, fontSize: '1.5rem',   lineHeight: '2rem' },
-    h4: { fontWeight: 700, fontSize: '1.25rem',  lineHeight: '1.75rem' },
+    fontFamily: '"Public Sans", "Helvetica", "Arial", sans-serif',
+    h1: { fontFamily: 'Manrope', fontWeight: 800, fontSize: '3rem',    lineHeight: '3.5rem', letterSpacing: '-0.02em' },
+    h2: { fontFamily: 'Manrope', fontWeight: 700, fontSize: '1.875rem', lineHeight: '2.375rem' },
+    h3: { fontFamily: 'Manrope', fontWeight: 700, fontSize: '1.5rem',   lineHeight: '2rem' },
+    h4: { fontFamily: 'Manrope', fontWeight: 700, fontSize: '1.25rem',  lineHeight: '1.75rem' },
+    h5: { fontFamily: 'Manrope', fontWeight: 700 },
+    h6: { fontFamily: 'Manrope', fontWeight: 700 },
     subtitle1: { fontWeight: 600, fontSize: '1rem',    lineHeight: '1.5rem' },
     body1:     { fontWeight: 400, fontSize: '1rem',    lineHeight: '1.625rem' },
     body2:     { fontWeight: 400, fontSize: '0.875rem', lineHeight: '1.375rem' },
@@ -51,6 +53,17 @@ export const theme = createTheme({
       styleOverrides: {
         input: {
           '&::placeholder': { color: '#4E5868', opacity: 1 },
+        },
+      },
+    },
+    // Uniform focus ring across every interactive element (buttons,
+    // inputs, custom nav rows, etc.) rather than each component's own
+    // default focus treatment.
+    MuiCssBaseline: {
+      styleOverrides: {
+        ':focus-visible': {
+          outline: 'none',
+          boxShadow: '0 0 0 3px rgba(26,86,219,0.32)',
         },
       },
     },

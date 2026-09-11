@@ -9,8 +9,8 @@ export function NewPropertyPage() {
 
   return (
     <Box>
-      <Typography variant="h5" component="h1" sx={{ mb: 3, fontWeight: 600 }}>
-        Add property
+      <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
+        Add a new property
       </Typography>
       <PropertyForm
         isSubmitting={createProperty.isPending}

@@ -1,14 +1,19 @@
+# Environment files — never commit real .env files, anywhere in the repo.
+# .env.example files are the exception: they hold placeholder values only
+# and are meant to be committed as templates.
+.env
+.env.*
+!.env.example
+!**/.env.example
+
 # Backend (Go)
 backend/bin/
 backend/tmp/
-backend/.env
 *.test
 
 # Frontend (Node)
 frontend/node_modules/
 frontend/dist/
-frontend/.env
-frontend/.env.local
 frontend/coverage/
 frontend/*.tsbuildinfo
 

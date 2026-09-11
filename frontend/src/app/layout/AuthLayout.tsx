@@ -12,7 +12,7 @@ const HERO_IMAGE_SRC: string = heroImage;
  * Full-bleed split layout for unauthenticated pages (login, register,
  * forgot-password): a dark marketing panel on the left, the page's own
  * content (rendered via Outlet) centered on the right. Deliberately does
- * not use RootLayout — there's no app nav to show before someone's
+ * not use AppShell — there's no app nav to show before someone's
  * signed in.
  */
 export function AuthLayout() {
