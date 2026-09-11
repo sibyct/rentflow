@@ -4,6 +4,14 @@
 // shell specifically that isn't a first-class MUI palette slot lives
 // here instead of as one-off hex values scattered through components.
 export const tokens = {
+  // RentFlow brand mark ("Roofline Ledger") — see
+  // shared/components/RentFlowMark.tsx and BrandMark.tsx, the only
+  // places these should be referenced directly.
+  brand: {
+    ink: '#14261C',
+    green: '#2F7A55',
+    mint: '#6FCB9B',
+  },
   azure: {
     50: '#EEF3FE',
     200: '#B2C8FA',

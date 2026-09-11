@@ -15,10 +15,11 @@ const RANGE_OPTIONS = ['This month', 'Last month', 'This quarter', 'This year'];
 /**
  * Breadcrumb + H1 are entirely data-driven from navConfig — they update
  * automatically as the route changes, so individual pages never need to
- * set their own header. "This month" is a real (if not-yet-data-backed)
- * dropdown; "Export" is disabled outright rather than wired to a fake
- * no-op, since a button that visibly does nothing on click reads as
- * broken.
+ * set their own header. The "This month" range dropdown + Export button
+ * are Dashboard-specific (revenue range), not a generic per-page toolbar,
+ * so they only render there — every other page's own content owns
+ * whatever actions/subtext belong under its H1 (see PropertiesScreen for
+ * an example with a real, working Export button of its own).
  */
 export function PageHeader() {
   const location = useLocation();
@@ -41,27 +42,29 @@ export function PageHeader() {
         <Typography variant="h3">{match.item.label}</Typography>
       </Box>
 
-      <Stack direction="row" spacing={1.5}>
-        <Button
-          variant="outlined"
-          onClick={handleOpenMenu}
-          endIcon={<KeyboardArrowDownOutlined />}
-          sx={{ borderColor: tokens.slate[300], color: tokens.slate[700] }}
-        >
-          {range}
-        </Button>
-        <Menu anchorEl={menuAnchor} open={Boolean(menuAnchor)} onClose={() => setMenuAnchor(null)}>
-          {RANGE_OPTIONS.map((option) => (
-            <MenuItem key={option} selected={option === range} onClick={() => handleSelect(option)}>
-              {option}
-            </MenuItem>
-          ))}
-        </Menu>
+      {match.item.id === 'dashboard' && (
+        <Stack direction="row" spacing={1.5}>
+          <Button
+            variant="outlined"
+            onClick={handleOpenMenu}
+            endIcon={<KeyboardArrowDownOutlined />}
+            sx={{ borderColor: tokens.slate[300], color: tokens.slate[700] }}
+          >
+            {range}
+          </Button>
+          <Menu anchorEl={menuAnchor} open={Boolean(menuAnchor)} onClose={() => setMenuAnchor(null)}>
+            {RANGE_OPTIONS.map((option) => (
+              <MenuItem key={option} selected={option === range} onClick={() => handleSelect(option)}>
+                {option}
+              </MenuItem>
+            ))}
+          </Menu>
 
-        <Button variant="outlined" disabled sx={{ borderColor: tokens.slate[300] }}>
-          Export
-        </Button>
-      </Stack>
+          <Button variant="outlined" disabled sx={{ borderColor: tokens.slate[300] }}>
+            Export
+          </Button>
+        </Stack>
+      )}
     </Stack>
   );
 }

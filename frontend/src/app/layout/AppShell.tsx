@@ -5,6 +5,7 @@ import useMediaQuery from '@mui/material/useMediaQuery';
 import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
 import { PageHeader } from './PageHeader';
+import { ChromeInteractivityProvider } from './ChromeInteractivityContext';
 import { tokens } from '../tokens';
 
 /**
@@ -21,16 +22,18 @@ export function AppShell() {
   const collapsed = manualCollapsed ?? isNarrow;
 
   return (
-    <Box sx={{ display: 'flex', minHeight: '100vh', bgcolor: tokens.slate[50] }}>
-      <Sidebar collapsed={collapsed} onToggleCollapsed={() => setManualCollapsed(!collapsed)} />
+    <ChromeInteractivityProvider>
+      <Box sx={{ display: 'flex', minHeight: '100vh', bgcolor: tokens.slate[50] }}>
+        <Sidebar collapsed={collapsed} onToggleCollapsed={() => setManualCollapsed(!collapsed)} />
 
-      <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-        <TopBar />
-        <Box component="main" sx={{ flex: 1, p: 3 }}>
-          <PageHeader />
-          <Outlet />
+        <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+          <TopBar />
+          <Box component="main" sx={{ flex: 1, p: 3 }}>
+            <PageHeader />
+            <Outlet />
+          </Box>
         </Box>
       </Box>
-    </Box>
+    </ChromeInteractivityProvider>
   );
 }

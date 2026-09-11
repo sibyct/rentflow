@@ -14,6 +14,7 @@ import NotificationsOutlined from '@mui/icons-material/NotificationsOutlined';
 import SearchOutlined from '@mui/icons-material/SearchOutlined';
 import { useAuth, useLogout } from '@/features/auth';
 import { tokens } from '../tokens';
+import { useChromeDimmed } from './ChromeInteractivityContext';
 
 // Static placeholder content: there's no notifications backend yet. Kept
 // here rather than invented server-side so it's obvious this is demo
@@ -29,6 +30,7 @@ export function TopBar() {
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
   const { user } = useAuth();
   const logout = useLogout();
+  const dimmed = useChromeDimmed();
 
   const handleTrigger = (key: 'notifications' | 'account') => (e: MouseEvent<HTMLElement>) => {
     if (openPopover === key) {
@@ -66,9 +68,12 @@ export function TopBar() {
       <TextField
         placeholder="Search units, residents, work orders"
         size="small"
+        disabled={dimmed}
         sx={{
           width: '100%',
           maxWidth: 420,
+          opacity: dimmed ? 0.5 : 1,
+          transition: 'opacity 150ms ease',
           '& .MuiOutlinedInput-root': {
             height: 34,
             bgcolor: tokens.slate[50],
@@ -110,7 +115,16 @@ export function TopBar() {
         }}
       />
 
-      <Stack direction="row" sx={{ alignItems: 'center', gap: 1.5 }}>
+      <Stack
+        direction="row"
+        sx={{
+          alignItems: 'center',
+          gap: 1.5,
+          opacity: dimmed ? 0.5 : 1,
+          pointerEvents: dimmed ? 'none' : 'auto',
+          transition: 'opacity 150ms ease',
+        }}
+      >
         <IconButton onClick={handleTrigger('notifications')} aria-label="Notifications">
           <Badge
             variant="dot"

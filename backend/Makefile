@@ -1,4 +1,4 @@
-.PHONY: run build test test-integration lint fmt migrate-up migrate-down migrate-create tidy
+.PHONY: run build test test-integration lint fmt migrate-up migrate-down migrate-create tidy seed
 
 APP_NAME := api
 MIGRATIONS_DIR := migrations
@@ -11,6 +11,12 @@ LDFLAGS    := -X main.Version=$(VERSION) -X main.Commit=$(COMMIT) -X main.BuildD
 
 run:
 	go run ./cmd/api
+
+# Creates one admin login for local development (idempotent — a rerun
+# skips if the email already exists). Override with SEED_ADMIN_EMAIL /
+# SEED_ADMIN_PASSWORD; defaults to admin@propertymanagement.local.
+seed:
+	go run ./cmd/seed
 
 build:
 	go build -ldflags "$(LDFLAGS)" -o bin/$(APP_NAME) ./cmd/api

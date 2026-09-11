@@ -10,6 +10,7 @@ import MenuOutlined from '@mui/icons-material/MenuOutlined';
 import { BrandMark } from '@/shared/components';
 import { tokens } from '../tokens';
 import { navGroups, settingsNavItem, findNavItemByPath, type NavItem } from './navConfig';
+import { useChromeDimmed } from './ChromeInteractivityContext';
 
 interface SidebarProps {
   collapsed: boolean;
@@ -19,6 +20,7 @@ interface SidebarProps {
 export function Sidebar({ collapsed, onToggleCollapsed }: SidebarProps) {
   const location = useLocation();
   const activeId = findNavItemByPath(location.pathname)?.item.id;
+  const dimmed = useChromeDimmed();
 
   return (
     <Box
@@ -39,8 +41,19 @@ export function Sidebar({ collapsed, onToggleCollapsed }: SidebarProps) {
     >
       <SidebarHeader collapsed={collapsed} onToggleCollapsed={onToggleCollapsed} />
 
-      <Box sx={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', px: collapsed ? 1 : 1.5, py: 1.5 }}>
-        <Stack spacing={2}>
+      <Box
+        sx={{
+          flex: 1,
+          overflowY: 'auto',
+          overflowX: 'hidden',
+          px: collapsed ? 1 : 1.5,
+          py: 2,
+          opacity: dimmed ? 0.5 : 1,
+          pointerEvents: dimmed ? 'none' : 'auto',
+          transition: 'opacity 150ms ease',
+        }}
+      >
+        <Stack spacing={2.5}>
           {navGroups.map((group) => (
             <Box key={group.id}>
               {group.label &&
@@ -49,14 +62,13 @@ export function Sidebar({ collapsed, onToggleCollapsed }: SidebarProps) {
                 ) : (
                   <Typography
                     sx={{
-                      fontFamily: tokens.fontMono,
-                      fontSize: 10,
-                      fontWeight: 500,
-                      letterSpacing: '0.08em',
+                      fontSize: 11,
+                      fontWeight: 600,
+                      letterSpacing: '0.04em',
                       textTransform: 'uppercase',
-                      color: tokens.slate[400],
+                      color: tokens.slate[300],
                       px: 1,
-                      mb: 0.5,
+                      mb: 1,
                     }}
                   >
                     {group.label}
@@ -72,29 +84,16 @@ export function Sidebar({ collapsed, onToggleCollapsed }: SidebarProps) {
         </Stack>
       </Box>
 
-      {!collapsed && (
-        <Box
-          sx={{
-            mx: 1.5,
-            mb: 1.5,
-            p: 1.5,
-            borderRadius: `${tokens.radiusCard}px`,
-            bgcolor: tokens.warningTint,
-            color: tokens.warningInk,
-          }}
-        >
-          <Typography sx={{ fontSize: 13, fontWeight: 600 }}>3 leases expire in 30 days</Typography>
-          <Typography
-            component={RouterLink}
-            to="/leases"
-            sx={{ fontSize: 13, fontWeight: 600, textDecoration: 'underline', color: 'inherit', display: 'block', mt: 0.25 }}
-          >
-            Review renewals
-          </Typography>
-        </Box>
-      )}
-
-      <Box sx={{ borderTop: `1px solid ${tokens.slate[100]}`, px: collapsed ? 1 : 1.5, py: 1.5 }}>
+      <Box
+        sx={{
+          borderTop: `1px solid ${tokens.slate[100]}`,
+          px: collapsed ? 1 : 1.5,
+          py: 1.25,
+          opacity: dimmed ? 0.5 : 1,
+          pointerEvents: dimmed ? 'none' : 'auto',
+          transition: 'opacity 150ms ease',
+        }}
+      >
         <NavRow item={settingsNavItem} active={settingsNavItem.id === activeId} collapsed={collapsed} />
       </Box>
     </Box>
@@ -124,7 +123,7 @@ function SidebarHeader({ collapsed, onToggleCollapsed }: SidebarProps) {
       direction="row"
       sx={{ alignItems: 'center', justifyContent: 'space-between', height: tokens.topBarHeight, px: 1.5 }}
     >
-      <BrandMark size={28} nameHidden/>
+      <BrandMark size={26} />
       <Tooltip title="Collapse sidebar" placement="right">
         <IconButton size="small" onClick={onToggleCollapsed} aria-label="Collapse sidebar">
           <MenuOpenOutlined fontSize="small" />
@@ -142,39 +141,71 @@ interface NavRowProps {
 
 function NavRow({ item, active, collapsed }: NavRowProps) {
   const Icon = item.icon;
+  // Matches the containing scroll box's own padding (px: collapsed ? 1 : 1.5
+  // in Sidebar's render), so the accent bar's negative offset lands it
+  // exactly on the sidebar's left edge instead of the row's own edge.
+  const railOffset = collapsed ? -8 : -12;
 
   const row = (
-    <ButtonBase
-      component={item.disabled ? 'div' : RouterLink}
-      to={item.disabled ? undefined : item.path}
-      disabled={item.disabled}
-      sx={{
-        width: '100%',
-        height: tokens.navItemHeight,
-        borderRadius: `${tokens.radiusControl}px`,
-        px: 1,
-        justifyContent: collapsed ? 'center' : 'flex-start',
-        gap: 1.25,
-        color: item.disabled ? tokens.slate[300] : active ? tokens.azure[700] : tokens.slate[700],
-        bgcolor: active ? tokens.azure[50] : 'transparent',
-        fontWeight: active ? 600 : 500,
-        fontSize: 14,
-        cursor: item.disabled ? 'not-allowed' : 'pointer',
-        boxShadow: active ? `inset 2px 0 0 ${tokens.azure[500]}` : 'none',
-        '&:hover': item.disabled ? undefined : { bgcolor: active ? tokens.azure[50] : tokens.slate[50] },
-        '&.Mui-focusVisible': { boxShadow: `${active ? `inset 2px 0 0 ${tokens.azure[500]}, ` : ''}${tokens.focusRing}` },
-      }}
-    >
-      <Icon sx={{ fontSize: 20, flexShrink: 0 }} />
-      {!collapsed && (
-        <>
-          <Typography sx={{ flex: 1, textAlign: 'left', fontSize: 'inherit', fontWeight: 'inherit', color: 'inherit' }}>
-            {item.label}
-          </Typography>
-          {item.badge && <BadgePill count={item.badge.count} kind={item.badge.kind} />}
-        </>
+    <Box sx={{ position: 'relative' }}>
+      {active && (
+        <Box
+          sx={{
+            position: 'absolute',
+            left: railOffset,
+            top: 6,
+            bottom: 6,
+            width: 3,
+            borderRadius: '0 3px 3px 0',
+            bgcolor: tokens.azure[500],
+          }}
+        />
       )}
-    </ButtonBase>
+      <ButtonBase
+        component={item.disabled ? 'div' : RouterLink}
+        to={item.disabled ? undefined : item.path}
+        disabled={item.disabled}
+        sx={{
+          width: '100%',
+          height: tokens.navItemHeight,
+          borderRadius: '10px',
+          px: 1,
+          justifyContent: collapsed ? 'center' : 'flex-start',
+          gap: 1.25,
+          color: item.disabled ? tokens.slate[300] : active ? tokens.azure[700] : tokens.slate[600],
+          fontWeight: active ? 600 : 500,
+          fontSize: 14,
+          cursor: item.disabled ? 'not-allowed' : 'pointer',
+          '&:hover': item.disabled ? undefined : { bgcolor: tokens.slate[50], color: active ? tokens.azure[700] : tokens.slate[900] },
+          '&.Mui-focusVisible': { boxShadow: tokens.focusRing },
+        }}
+      >
+        <Box
+          sx={{
+            width: 32,
+            height: 32,
+            flexShrink: 0,
+            borderRadius: '8px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            bgcolor: active ? tokens.azure[500] : 'transparent',
+            color: active ? '#FFFFFF' : 'inherit',
+            transition: 'background-color 100ms ease',
+          }}
+        >
+          <Icon sx={{ fontSize: 20 }} />
+        </Box>
+        {!collapsed && (
+          <>
+            <Typography sx={{ flex: 1, textAlign: 'left', fontSize: 'inherit', fontWeight: 'inherit', color: 'inherit' }}>
+              {item.label}
+            </Typography>
+            {item.badge && <BadgePill count={item.badge.count} kind={item.badge.kind} />}
+          </>
+        )}
+      </ButtonBase>
+    </Box>
   );
 
   if (!collapsed) return row;
