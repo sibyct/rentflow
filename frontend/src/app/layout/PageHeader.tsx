@@ -12,6 +12,13 @@ import { findNavItemByPath } from './navConfig';
 
 const RANGE_OPTIONS = ['This month', 'Last month', 'This quarter', 'This year'];
 
+// Detail-style pages (one record, not a list) build a richer breadcrumb
+// + title + actions row of their own — see PropertyDetailScreen — which
+// makes this generic one directly redundant, not just visually similar.
+// Add a pattern here for any future page in the same situation (e.g. a
+// unit or lease detail page) rather than special-casing AppShell/routing.
+const OWN_HEADER_ROUTE_PATTERNS = [/^\/properties\/[^/]+$/];
+
 /**
  * Breadcrumb + H1 are entirely data-driven from navConfig — they update
  * automatically as the route changes, so individual pages never need to
@@ -28,6 +35,7 @@ export function PageHeader() {
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
 
   if (!match) return null;
+  if (OWN_HEADER_ROUTE_PATTERNS.some((pattern) => pattern.test(location.pathname))) return null;
 
   const handleOpenMenu = (e: MouseEvent<HTMLElement>) => setMenuAnchor(e.currentTarget);
   const handleSelect = (option: string) => {

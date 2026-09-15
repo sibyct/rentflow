@@ -33,12 +33,20 @@ export function useChromeDimmed(): boolean {
  * menu, nav links) for as long as the calling component stays mounted,
  * restoring it on unmount. ErrorState calls this via its `dimChrome` prop —
  * pages don't need to wire anything themselves.
+ *
+ * Reads the context directly (not via useChromeInteractivityContext,
+ * which throws when absent): ErrorState — and anything built on it,
+ * like ErrorBoundary's default fallback — can render above AppShell
+ * (e.g. a top-level error boundary catching a crash before the shell
+ * even mounts), where there's genuinely no chrome to dim. `dim=false`
+ * is always safe; `dim=true` outside the provider is a silent no-op
+ * rather than a hard crash.
  */
 export function useDimChromeWhileMounted(dim: boolean): void {
-  const { setDimmed } = useChromeInteractivityContext();
+  const ctx = useContext(ChromeInteractivityContext);
   useEffect(() => {
-    if (!dim) return;
-    setDimmed(true);
-    return () => setDimmed(false);
-  }, [dim, setDimmed]);
+    if (!dim || !ctx) return;
+    ctx.setDimmed(true);
+    return () => ctx.setDimmed(false);
+  }, [dim, ctx]);
 }
