@@ -52,25 +52,29 @@ type fakePropertyService struct{}
 func (f *fakePropertyService) CreateProperty(_ context.Context, input domain.CreatePropertyInput) (*domain.Property, error) {
 	now := time.Now().UTC()
 	return &domain.Property{
-		ID: uuid.New(), Address: input.Address, UnitCount: input.UnitCount,
+		ID: uuid.New(), Name: input.Name, Type: input.Type, AddressLine1: input.AddressLine1, Units: input.Units,
 		Status: domain.PropertyStatusActive, OwnerID: input.OwnerID, CreatedAt: now, UpdatedAt: now,
 	}, nil
 }
 
-func (f *fakePropertyService) GetProperty(_ context.Context, id uuid.UUID) (*domain.Property, error) {
+func (f *fakePropertyService) GetProperty(_ context.Context, id, ownerID uuid.UUID) (*domain.Property, error) {
 	return nil, domain.ErrNotFound
 }
 
-func (f *fakePropertyService) ListProperties(_ context.Context, _ uuid.UUID, _, _ int) ([]*domain.Property, int, error) {
+func (f *fakePropertyService) ListProperties(_ context.Context, _ domain.PropertyListOptions) ([]*domain.Property, int, error) {
 	return []*domain.Property{}, 0, nil
 }
 
-func (f *fakePropertyService) UpdateProperty(_ context.Context, _ uuid.UUID, _ domain.UpdatePropertyInput) (*domain.Property, error) {
+func (f *fakePropertyService) UpdateProperty(_ context.Context, _, _ uuid.UUID, _ domain.UpdatePropertyInput) (*domain.Property, error) {
 	return nil, domain.ErrNotFound
 }
 
-func (f *fakePropertyService) DeleteProperty(_ context.Context, _ uuid.UUID) error {
+func (f *fakePropertyService) DeleteProperty(_ context.Context, _, _ uuid.UUID) error {
 	return domain.ErrNotFound
+}
+
+func (f *fakePropertyService) BulkUpdateStatus(_ context.Context, _ uuid.UUID, _ []uuid.UUID, _ domain.PropertyStatus) (int, error) {
+	return 0, nil
 }
 
 func newTestRouter() http.Handler {
@@ -166,7 +170,7 @@ func TestRouter_Properties_Create_ValidationErrorDetails(t *testing.T) {
 	defer srv.Close()
 
 	// Empty body fails every "required" tag on CreatePropertyRequest
-	// (address, unit_count), exercising the full path from
+	// (name, type, address_line1, units), exercising the full path from
 	// go-playground validator tags -> domain.ValidationErrors ->
 	// response.WriteError's "details" array.
 	req, err := http.NewRequest(http.MethodPost, srv.URL+"/api/v1/properties", bytes.NewReader([]byte(`{}`)))
@@ -203,8 +207,8 @@ func TestRouter_Properties_Create_ValidationErrorDetails(t *testing.T) {
 	for _, d := range body.Details {
 		fields[d.Field] = true
 	}
-	if !fields["address"] || !fields["unit_count"] {
-		t.Errorf("POST /api/v1/properties (empty body) details = %+v, want failures for address and unit_count", body.Details)
+	if !fields["name"] || !fields["type"] || !fields["address_line1"] || !fields["units"] {
+		t.Errorf("POST /api/v1/properties (empty body) details = %+v, want failures for name, type, address_line1, and units", body.Details)
 	}
 }
 

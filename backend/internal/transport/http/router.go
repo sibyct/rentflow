@@ -63,6 +63,7 @@ func NewRouter(cfg RouterConfig) http.Handler {
 			r.Route("/properties", func(r chi.Router) {
 				r.Post("/", propertyHandler.Create)
 				r.Get("/", propertyHandler.List)
+				r.Patch("/status", propertyHandler.BulkUpdateStatus)
 				r.Get("/{id}", propertyHandler.Get)
 				r.Put("/{id}", propertyHandler.Update)
 				r.Delete("/{id}", propertyHandler.Delete)

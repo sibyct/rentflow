@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"propertymanagement/internal/domain"
@@ -31,6 +32,8 @@ func assertSingleFieldError(t *testing.T, err error, field string) {
 	}
 }
 
+const validCreatePropertyBody = `{"name":"Willow Creek","type":"residential_multi_unit","address_line1":"123 Main St","units":4}`
+
 func TestDecodeAndValidate_CreatePropertyRequest(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -38,26 +41,30 @@ func TestDecodeAndValidate_CreatePropertyRequest(t *testing.T) {
 		wantErr   bool
 		wantField string
 	}{
-		{name: "valid input", body: `{"address":"123 Main St","unit_count":4,"status":"active"}`},
-		{name: "valid input without optional status", body: `{"address":"123 Main St","unit_count":4}`},
+		{name: "valid input", body: `{"name":"Willow Creek","type":"residential_multi_unit","address_line1":"123 Main St","units":4,"status":"active"}`},
+		{name: "valid input without optional status", body: validCreatePropertyBody},
 		{
-			name: "missing address", body: `{"unit_count":4}`,
-			wantErr: true, wantField: "address",
+			name: "missing name", body: `{"type":"residential_multi_unit","address_line1":"123 Main St","units":4}`,
+			wantErr: true, wantField: "name",
 		},
 		{
-			name: "address too short", body: `{"address":"ab","unit_count":4}`,
-			wantErr: true, wantField: "address",
+			name: "missing address_line1", body: `{"name":"Willow Creek","type":"residential_multi_unit","units":4}`,
+			wantErr: true, wantField: "address_line1",
 		},
 		{
-			name: "missing unit_count", body: `{"address":"123 Main St"}`,
-			wantErr: true, wantField: "unit_count",
+			name: "missing units", body: `{"name":"Willow Creek","type":"residential_multi_unit","address_line1":"123 Main St"}`,
+			wantErr: true, wantField: "units",
 		},
 		{
-			name: "negative unit_count", body: `{"address":"123 Main St","unit_count":-1}`,
-			wantErr: true, wantField: "unit_count",
+			name: "negative units", body: `{"name":"Willow Creek","type":"residential_multi_unit","address_line1":"123 Main St","units":-1}`,
+			wantErr: true, wantField: "units",
 		},
 		{
-			name: "unknown status", body: `{"address":"123 Main St","unit_count":4,"status":"condemned"}`,
+			name: "unknown type", body: `{"name":"Willow Creek","type":"condemned","address_line1":"123 Main St","units":4}`,
+			wantErr: true, wantField: "type",
+		},
+		{
+			name: "unknown status", body: `{"name":"Willow Creek","type":"residential_multi_unit","address_line1":"123 Main St","units":4,"status":"condemned"}`,
 			wantErr: true, wantField: "status",
 		},
 		{name: "malformed json", body: `{not json`, wantErr: true},
@@ -86,23 +93,23 @@ func TestDecodeAndValidate_CreatePropertyRequest(t *testing.T) {
 
 func TestDecodeAndValidate_CreatePropertyRequest_SanitizesBeforeValidating(t *testing.T) {
 	var req dto.CreatePropertyRequest
-	err := decodeAndValidate(newJSONRequest(`{"address":"  123 Main St  ","unit_count":4}`), &req)
+	err := decodeAndValidate(newJSONRequest(`{"name":"Willow Creek","type":"residential_multi_unit","address_line1":"  123 Main St  ","units":4}`), &req)
 	if err != nil {
 		t.Fatalf("decodeAndValidate() unexpected error = %v", err)
 	}
-	if req.Address != "123 Main St" {
-		t.Errorf("Address = %q, want trimmed %q", req.Address, "123 Main St")
+	if req.AddressLine1 != "123 Main St" {
+		t.Errorf("AddressLine1 = %q, want trimmed %q", req.AddressLine1, "123 Main St")
 	}
 }
 
 func TestDecodeAndValidate_CreatePropertyRequest_WhitespaceOnlyAddressRejected(t *testing.T) {
 	var req dto.CreatePropertyRequest
-	err := decodeAndValidate(newJSONRequest(`{"address":"      ","unit_count":4}`), &req)
+	err := decodeAndValidate(newJSONRequest(`{"name":"Willow Creek","type":"residential_multi_unit","address_line1":"      ","units":4}`), &req)
 	// Sanitize trims "      " to "", which then correctly fails
 	// "required" — this is the ordering (sanitize before validate) that
 	// makes an all-whitespace address rejected instead of merely
 	// happening to be long enough to pass "min=3" pre-trim.
-	assertSingleFieldError(t, err, "address")
+	assertSingleFieldError(t, err, "address_line1")
 }
 
 // TestNoctrlValidator exercises the "noctrl" tag directly against
@@ -149,14 +156,21 @@ func TestDecodeAndValidate_UpdatePropertyRequest(t *testing.T) {
 		wantField string
 	}{
 		{name: "all fields omitted is valid (partial update)", body: `{}`},
-		{name: "valid address", body: `{"address":"456 Oak Ave"}`},
+		{name: "valid address", body: `{"address_line1":"456 Oak Ave"}`},
 		{
-			name: "address too short", body: `{"address":"ab"}`,
-			wantErr: true, wantField: "address",
+			// omitempty on a pointer field only skips a nil pointer, not
+			// an explicit "" — so a too-long string is what reliably
+			// exercises the tag at the HTTP boundary; whether an
+			// explicitly-empty string is itself acceptable on update is
+			// a business rule enforced one layer down, in the service
+			// (see TestPropertyService_UpdateProperty's "empty address
+			// rejected" case), not something omitempty can express here.
+			name: "address_line1 too long", body: `{"address_line1":"` + strings.Repeat("a", 256) + `"}`,
+			wantErr: true, wantField: "address_line1",
 		},
 		{
-			name: "zero unit_count", body: `{"unit_count":0}`,
-			wantErr: true, wantField: "unit_count",
+			name: "zero units", body: `{"units":0}`,
+			wantErr: true, wantField: "units",
 		},
 		{
 			name: "unknown status", body: `{"status":"condemned"}`,

@@ -20,6 +20,33 @@ export interface PropertyRow {
   status: PropertyRowStatus;
 }
 
+/** Full record for the property detail/edit views — everything PropertyRow has, plus every field the Add/Edit form collects. */
+export interface PropertyDetail {
+  id: string;
+  name: string;
+  type: PropertyType;
+  address: string;
+  addressLine1: string;
+  addressLine2: string;
+  city: string;
+  stateProvince: string;
+  postalCode: string;
+  country: string;
+  units: number;
+  ownership: 'owned' | 'managed' | '';
+  ownerName: string;
+  yearBuilt: number | null;
+  /** ISO 'YYYY-MM-DD', or '' when unset. */
+  onboardDate: string;
+  amenities: string[];
+  notes: string;
+  status: PropertyRowStatus;
+  occupancyPct: number;
+  collectedThisMonth: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export const PROPERTY_TYPES: PropertyType[] = [
   'Residential – Single Unit',
   'Residential – Multi Unit',

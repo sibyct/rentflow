@@ -1,10 +1,8 @@
-import { useEffect, useState, type ReactNode } from 'react';
-import Box from '@mui/material/Box';
+import type { ReactNode } from 'react';
 import { AppProviders } from './providers';
 import { AppRouter } from './router';
-import { ErrorBoundary, LoadingSpinner } from '@/shared/components';
-import { authApi } from '@/features/auth/api/authApi';
-import { useAuthStore } from '@/features/auth/store/authStore';
+import { AppLoadingScreen, ErrorBoundary } from '@/shared/components';
+import { useSessionBootstrap } from '@/features/auth/hooks/useSessionBootstrap';
 
 interface SessionBootstrapProps {
   children: ReactNode;
@@ -12,40 +10,16 @@ interface SessionBootstrapProps {
 
 /**
  * On first load the access token in memory is gone (it was never
- * persisted), but the httpOnly refresh cookie may still be valid. This
- * silently exchanges it for a new access token before rendering routes,
- * so an authenticated user isn't bounced to /login on every page reload.
+ * persisted), but the httpOnly refresh cookie may still be valid.
+ * useSessionBootstrap silently exchanges it for a new access token
+ * before rendering routes, so an authenticated user isn't bounced to
+ * /login on every page reload.
  */
 function SessionBootstrap({ children }: SessionBootstrapProps) {
-  const [ready, setReady] = useState(false);
-  const setAuth = useAuthStore((s) => s.setAuth);
+  const { isPending } = useSessionBootstrap();
 
-  useEffect(() => {
-    let cancelled = false;
-
-    authApi
-      .refresh()
-      .then((result) => {
-        if (!cancelled) setAuth(result.accessToken, result.user);
-      })
-      .catch(() => {
-        // No valid session cookie yet — starting logged out is expected.
-      })
-      .finally(() => {
-        if (!cancelled) setReady(true);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [setAuth]);
-
-  if (!ready) {
-    return (
-      <Box sx={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <LoadingSpinner label="Loading session…" />
-      </Box>
-    );
+  if (isPending) {
+    return <AppLoadingScreen />;
   }
 
   return <>{children}</>;
@@ -53,7 +27,15 @@ function SessionBootstrap({ children }: SessionBootstrapProps) {
 
 export function App() {
   return (
-    <ErrorBoundary>
+    // Catastrophic-failure boundary only: this sits above AppProviders,
+    // so a crash here means the router/query client/theme themselves
+    // never mounted — "Try again" (remount) is the only in-app recovery
+    // available, so a full reload is offered too. Anything that fails
+    // *after* the shell is up (a single page, a widget) should be
+    // caught by a boundary further down instead (see AppShell), so
+    // navigation and the rest of the app stay usable — this one is
+    // deliberately the last resort, not the only line of defense.
+    <ErrorBoundary secondaryAction={{ label: 'Reload page', onClick: () => window.location.reload() }}>
       <AppProviders>
         <SessionBootstrap>
           <AppRouter />

@@ -29,7 +29,11 @@ export function AppProviders({ children }: AppProvidersProps) {
       <ThemeProvider theme={theme}>
         <CssBaseline />
         <BrowserRouter>{children}</BrowserRouter>
-        {import.meta.env.DEV && <ReactQueryDevtools initialIsOpen={false} />}
+        {/* bottom-left, not the default bottom-right: that corner is
+            where primary dialog/modal action buttons conventionally
+            sit (e.g. AddPropertyModal's Next/Save Property), and the
+            default position sits right on top of them in local dev. */}
+        {import.meta.env.DEV && <ReactQueryDevtools initialIsOpen={false} buttonPosition="bottom-left" />}
       </ThemeProvider>
     </QueryClientProvider>
   );
