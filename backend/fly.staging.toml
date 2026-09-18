@@ -1,0 +1,53 @@
+# STAGING Fly.io app config — deployed by the deploy-staging job in
+# ../.github/workflows/cd.yml on every push to dev. See fly.toml (the
+# production config) for the full setup walkthrough; this file mirrors
+# it against a second, separate Fly app and database so testing a
+# deploy never touches production data.
+#
+# One-time setup, from inside backend/:
+#   1. `fly launch --no-deploy --config fly.staging.toml` (or
+#      `fly apps create <name>-staging`), then fill in `app` below.
+#   2. `fly secrets set --app propertymanagement-api-staging \
+#        DATABASE_URL=... REDIS_ADDR=... REDIS_PASSWORD=... \
+#        JWT_ACCESS_SECRET=... JWT_REFRESH_SECRET=...`
+#      — use different secret values than production, especially the
+#      JWT secrets (a shared secret would let a staging-issued token
+#      authenticate against production, and vice versa).
+#   3. In GitHub repo settings → Environments → staging, add
+#      FLY_API_TOKEN (a deploy token for THIS app) — that's the only
+#      GitHub secret this app needs; DATABASE_URL only has to exist as
+#      a Fly secret (step 2) since migrations run via release_command
+#      below, on a machine with the same private-network access as the
+#      app itself. See fly.toml's comment (production) for why.
+
+app = "propertymanagement-api-staging" # replace with your actual Fly app name
+primary_region = "iad"
+
+[build]
+
+[deploy]
+  release_command = "/app/migrate"
+
+[env]
+  APP_ENV = "staging"
+  HTTP_PORT = "8080"
+  DATABASE_MAX_CONNS = "10"
+  JWT_ACCESS_TTL = "15m"
+  JWT_REFRESH_TTL = "168h"
+  COOKIE_SECURE = "true"
+  # Leave COOKIE_DOMAIN unset — see fly.toml's comment (production) for
+  # why: the frontend proxies /api/ through its own nginx, so the
+  # browser never talks to this app's domain directly.
+  ALLOWED_ORIGINS = "https://propertymanagement-web-staging.fly.dev"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 0
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 256

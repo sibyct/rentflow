@@ -1,0 +1,76 @@
+# PRODUCTION Fly.io app config — deployed by the deploy-production job
+# in ../.github/workflows/cd.yml on every push to main. For the dev/
+# staging counterpart (deployed on push to dev), see fly.staging.toml —
+# same shape, separate app, separate database, separate GitHub
+# Environment-scoped secrets.
+#
+# This file is a template — before the CD workflow can deploy anything,
+# you need to, once, from inside backend/:
+#   1. `fly auth login`
+#   2. `fly launch --no-deploy --config fly.toml` (or `fly apps create
+#      <name>`) — this either generates a real fly.toml or lets you fill
+#      in the `app` name below yourself.
+#   3. Set every non-secret env var your config.Load() needs that ISN'T
+#      already below, and every secret one via `fly secrets set`, e.g.:
+#        fly secrets set --app propertymanagement-api \
+#          DATABASE_URL=postgres://... \
+#          REDIS_ADDR=... \
+#          REDIS_PASSWORD=... \
+#          JWT_ACCESS_SECRET=$(openssl rand -base64 48) \
+#          JWT_REFRESH_SECRET=$(openssl rand -base64 48)
+#      (never put secrets in the [env] block below — that's committed
+#      to git and visible to anyone with repo access)
+#   4. Create a deploy token (`fly tokens create deploy`) and, in GitHub
+#      repo settings → Environments → production, add it as that
+#      environment's FLY_API_TOKEN secret (not a plain repo secret —
+#      scoping it to the environment is what keeps it separate from
+#      staging's token).
+#
+# DATABASE_URL only needs to exist in ONE place: the `fly secrets set`
+# above, read by both the running API and the release_command below.
+# Neither needs a publicly-reachable connection string — release_command
+# runs on a machine with the same private-network access as the app
+# itself, so a Fly Postgres app's private (.internal) address is fine,
+# and this database never needs to be reachable from GitHub's runners
+# at all. See cmd/migrate/main.go for what that binary actually does.
+
+app = "propertymanagement-api" # replace with your actual Fly app name
+primary_region = "iad" # pick the region closest to your database
+
+[build]
+
+[deploy]
+  release_command = "/app/migrate"
+
+[env]
+  APP_ENV = "production"
+  HTTP_PORT = "8080"
+  DATABASE_MAX_CONNS = "10"
+  JWT_ACCESS_TTL = "15m"
+  JWT_REFRESH_TTL = "168h"
+  COOKIE_SECURE = "true"
+  # Leave COOKIE_DOMAIN unset (do NOT set it to this API's own domain).
+  # The frontend proxies /api/ through its own nginx rather than the
+  # browser calling this app directly (see frontend/nginx.conf.template)
+  # — from the browser's point of view, every response comes from the
+  # frontend's origin, so an omitted Domain attribute correctly scopes
+  # the refresh-token cookie there. Setting it to THIS app's domain
+  # would scope the cookie to a host the browser never actually talks
+  # to, and the cookie would never come back.
+  #
+  # ALLOWED_ORIGINS matters far less now that the browser never calls
+  # this API cross-origin, but keep it accurate for any direct testing
+  # (curl, Postman, a future mobile client, etc.):
+  ALLOWED_ORIGINS = "https://propertymanagement-web.fly.dev"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 256

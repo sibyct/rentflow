@@ -3,6 +3,8 @@ import type { WorkOrderCategory } from '@/features/maintenance/types';
 import type { InsuranceStatus, VendorDetail, VendorRateType, VendorPaymentTerms, VendorRow, VendorSortKey, VendorSpendSummary } from '../types';
 import type { VendorFormValues } from '../schemas/vendorSchema';
 
+export type { VendorSortKey } from '../types';
+
 // Wire shape exactly as internal/transport/http/dto/vendor_dto.go's
 // VendorResponse/VendorWithStatsResponse serialize it.
 interface VendorWire {

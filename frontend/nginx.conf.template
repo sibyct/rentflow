@@ -1,0 +1,40 @@
+# A *variable* proxy_pass target (below) makes nginx resolve the
+# upstream at REQUEST time using this resolver, with retries — a
+# *static* hostname in proxy_pass instead resolves once at nginx
+# startup, and DNS failure at that moment (the app not existing yet,
+# a transient blip, ...) is FATAL: nginx refuses to start at all,
+# taking the whole frontend down. Cloudflare/Google public resolvers,
+# since Fly Machines have outbound internet access by default.
+resolver 1.1.1.1 8.8.8.8 valid=30s;
+
+server {
+    listen 80;
+    server_name _;
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # Proxies the API through this same origin instead of the browser
+    # calling the API's own *.fly.dev domain directly. This matters for
+    # more than convenience: fly.dev is deliberately on the Public
+    # Suffix List, so two different *.fly.dev apps are different SITES
+    # to a browser — a direct cross-origin call would silently drop the
+    # httpOnly, SameSite=Strict refresh-token cookie. Proxying keeps
+    # the browser talking to exactly one origin.
+    #
+    # ${API_BACKEND_URL} is substituted at Docker build time (see
+    # Dockerfile) from [build.args] in fly.toml / fly.staging.toml —
+    # scheme + host only, no trailing slash (e.g. https://propertymanagement-api.fly.dev).
+    location /api/ {
+        set $backend "${API_BACKEND_URL}";
+        proxy_pass $backend/api/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_ssl_server_name on;
+    }
+
+    # SPA fallback: let react-router handle client-side routes.
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}

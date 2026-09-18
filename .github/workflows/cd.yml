@@ -1,0 +1,108 @@
+name: CD
+
+# Deploys automatically on push to dev (staging) and main (production) —
+# mirrors the branch model the rest of this repo already uses. Each
+# target is a separate Fly app with its own database (backend/fly.toml
+# for production, backend/fly.staging.toml for staging) and a separate
+# GitHub Environment (Settings → Environments → staging / production),
+# each holding its own same-named FLY_API_TOKEN secret scoped to that
+# environment's actual infra — see the comments at the top of both
+# fly.toml files for the one-time setup.
+#
+# Migrations are NOT a separate job here — each fly.toml's [deploy]
+# release_command runs backend/cmd/migrate's binary on a machine with
+# the same private-network access as the app itself, as part of
+# `flyctl deploy` below. That means the production/staging databases
+# never need to be reachable from a GitHub-hosted runner at all, and
+# DATABASE_URL only ever exists as a Fly secret, never a GitHub one.
+#
+# Frontend deploys the same way, to its own pair of Fly apps
+# (frontend/fly.toml, frontend/fly.staging.toml) — nginx serving the
+# Vite build, proxying /api/ to that environment's backend app so the
+# browser only ever talks to one origin (required for the refresh-
+# token cookie to survive across what would otherwise be two different
+# *.fly.dev sites — see frontend/nginx.conf.template). Each frontend
+# job runs after its backend counterpart so the app it proxies to is
+# already live.
+on:
+  push:
+    branches: [dev, main]
+
+concurrency:
+  group: cd-${{ github.workflow }}-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  # ---- staging (dev branch) ----------------------------------------
+
+  deploy-staging:
+    if: github.ref == 'refs/heads/dev'
+    name: "[staging] Deploy backend to Fly.io"
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Deploy
+        working-directory: backend
+        run: flyctl deploy --remote-only --config fly.staging.toml
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+  # ---- production (main branch) ------------------------------------
+
+  deploy-production:
+    if: github.ref == 'refs/heads/main'
+    name: "[production] Deploy backend to Fly.io"
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Deploy
+        working-directory: backend
+        run: flyctl deploy --remote-only --config fly.toml
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+  # ---- frontend, staging (dev branch) -------------------------------
+
+  deploy-frontend-staging:
+    if: github.ref == 'refs/heads/dev'
+    name: "[staging] Deploy frontend to Fly.io"
+    needs: deploy-staging
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Deploy
+        working-directory: frontend
+        run: flyctl deploy --remote-only --config fly.staging.toml
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+  # ---- frontend, production (main branch) ---------------------------
+
+  deploy-frontend-production:
+    if: github.ref == 'refs/heads/main'
+    name: "[production] Deploy frontend to Fly.io"
+    needs: deploy-production
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Deploy
+        working-directory: frontend
+        run: flyctl deploy --remote-only --config fly.toml
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
