@@ -1,7 +1,9 @@
 import { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
+import Chip from '@mui/material/Chip';
 import Dialog from '@mui/material/Dialog';
 import DialogActions from '@mui/material/DialogActions';
 import DialogContent from '@mui/material/DialogContent';
@@ -35,6 +37,14 @@ type CounterKey = 'open' | 'overdue' | 'unassigned' | 'emergency';
 
 export function MaintenanceScreen() {
   const [tab, setTab] = useState<'work-orders' | 'scheduled'>('work-orders');
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // A vendor's "open jobs" count (VendorsTable / VendorDetailScreen)
+  // deep-links here as ?vendor_id=&vendor_name= — read once on mount so
+  // the list lands pre-filtered; the chip below lets the user clear it
+  // without a full page reload.
+  const [vendorFilter, setVendorFilter] = useState(() => searchParams.get('vendor_id') ?? '');
+  const [vendorFilterName, setVendorFilterName] = useState(() => searchParams.get('vendor_name') ?? '');
 
   const [search, setSearch] = useState('');
   const [propertyFilter, setPropertyFilter] = useState('');
@@ -72,6 +82,7 @@ export function MaintenanceScreen() {
     status: statusFilter || undefined,
     priority: effectivePriorityFilter || undefined,
     category: categoryFilter || undefined,
+    vendorId: vendorFilter || undefined,
     overdue: activeCounter === 'overdue' || undefined,
     unassigned: activeCounter === 'unassigned' || undefined,
     sort: sortKey,
@@ -86,7 +97,7 @@ export function MaintenanceScreen() {
 
   const workOrders = data?.workOrders ?? [];
   const total = data?.total ?? 0;
-  const isFiltered = Boolean(search || propertyFilter || statusFilter || priorityFilter || categoryFilter || activeCounter);
+  const isFiltered = Boolean(search || propertyFilter || statusFilter || priorityFilter || categoryFilter || activeCounter || vendorFilter);
   const emptyState: MaintenanceEmptyState = isLoading || total > 0 ? { kind: 'none' } : isFiltered ? { kind: 'filtered' } : { kind: 'first-time' };
 
   function handleSort(key: WorkOrderSortKey) {
@@ -105,7 +116,19 @@ export function MaintenanceScreen() {
     setPriorityFilter('');
     setCategoryFilter('');
     setActiveCounter(null);
+    clearVendorFilter();
     setPage(0);
+  }
+
+  function clearVendorFilter() {
+    setVendorFilter('');
+    setVendorFilterName('');
+    if (searchParams.has('vendor_id') || searchParams.has('vendor_name')) {
+      const next = new URLSearchParams(searchParams);
+      next.delete('vendor_id');
+      next.delete('vendor_name');
+      setSearchParams(next, { replace: true });
+    }
   }
 
   function toggleRow(id: string) {
@@ -184,6 +207,15 @@ export function MaintenanceScreen() {
             }}
             onAddWorkOrder={() => setAddOpen(true)}
           />
+
+          {vendorFilter && (
+            <Chip
+              label={`Vendor: ${vendorFilterName || 'Selected vendor'}`}
+              onDelete={clearVendorFilter}
+              size="small"
+              sx={{ mb: 2, fontWeight: 600, alignSelf: 'flex-start' }}
+            />
+          )}
 
           {selected.size > 0 && (
             <Stack

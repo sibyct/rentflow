@@ -159,11 +159,90 @@ func (f *fakeRecurringRuleRepository) Delete(_ context.Context, id uuid.UUID) er
 	return nil
 }
 
+// fakeVendorRepository is an in-memory stand-in for domain.VendorRepository.
+// propertiesServed tracks the last value passed to Create/SetPropertiesServed
+// per vendor, so VendorService tests can assert on it.
+type fakeVendorRepository struct {
+	vendors          map[uuid.UUID]*domain.Vendor
+	propertiesServed map[uuid.UUID][]uuid.UUID
+}
+
+func newFakeVendorRepository() *fakeVendorRepository {
+	return &fakeVendorRepository{
+		vendors:          make(map[uuid.UUID]*domain.Vendor),
+		propertiesServed: make(map[uuid.UUID][]uuid.UUID),
+	}
+}
+
+func (f *fakeVendorRepository) Create(_ context.Context, v *domain.Vendor, propertiesServed []uuid.UUID) error {
+	f.vendors[v.ID] = v
+	f.propertiesServed[v.ID] = propertiesServed
+	return nil
+}
+
+func (f *fakeVendorRepository) GetByID(_ context.Context, id uuid.UUID) (*domain.Vendor, error) {
+	v, ok := f.vendors[id]
+	if !ok {
+		return nil, domain.ErrNotFound
+	}
+	return v, nil
+}
+
+func (f *fakeVendorRepository) GetByIDWithStats(_ context.Context, id uuid.UUID) (*domain.VendorWithStats, error) {
+	v, ok := f.vendors[id]
+	if !ok {
+		return nil, domain.ErrNotFound
+	}
+	return &domain.VendorWithStats{Vendor: *v}, nil
+}
+
+func (f *fakeVendorRepository) ListForOwner(_ context.Context, _ domain.VendorListOptions) ([]*domain.VendorWithStats, int, error) {
+	out := make([]*domain.VendorWithStats, 0, len(f.vendors))
+	for _, v := range f.vendors {
+		out = append(out, &domain.VendorWithStats{Vendor: *v})
+	}
+	return out, len(out), nil
+}
+
+func (f *fakeVendorRepository) ListForCategory(_ context.Context, _ uuid.UUID, _ domain.WorkOrderCategory) ([]*domain.VendorWithStats, error) {
+	return nil, nil
+}
+
+func (f *fakeVendorRepository) Update(_ context.Context, v *domain.Vendor) error {
+	if _, ok := f.vendors[v.ID]; !ok {
+		return domain.ErrNotFound
+	}
+	f.vendors[v.ID] = v
+	return nil
+}
+
+func (f *fakeVendorRepository) Delete(_ context.Context, id uuid.UUID) error {
+	if _, ok := f.vendors[id]; !ok {
+		return domain.ErrNotFound
+	}
+	delete(f.vendors, id)
+	return nil
+}
+
+func (f *fakeVendorRepository) GetPropertiesServed(_ context.Context, vendorID uuid.UUID) ([]uuid.UUID, error) {
+	return f.propertiesServed[vendorID], nil
+}
+
+func (f *fakeVendorRepository) SetPropertiesServed(_ context.Context, vendorID uuid.UUID, propertyIDs []uuid.UUID) error {
+	f.propertiesServed[vendorID] = propertyIDs
+	return nil
+}
+
+func (f *fakeVendorRepository) GetSpendSummary(_ context.Context, _ uuid.UUID) (*domain.VendorSpendSummary, error) {
+	return &domain.VendorSpendSummary{}, nil
+}
+
 type workOrderTestFixture struct {
 	svc           *service.WorkOrderService
 	workOrderRepo *fakeWorkOrderRepository
 	propertyRepo  *fakePropertyRepository
 	unitRepo      *fakeUnitRepository
+	vendorRepo    *fakeVendorRepository
 	ownerID       uuid.UUID
 	property      *domain.Property
 	unit          *domain.Unit
@@ -174,7 +253,8 @@ func setupWorkOrderTest(t *testing.T) workOrderTestFixture {
 	propertyRepo := newFakePropertyRepository()
 	unitRepo := newFakeUnitRepository()
 	workOrderRepo := newFakeWorkOrderRepository()
-	svc := service.NewWorkOrderService(workOrderRepo, unitRepo, propertyRepo, noopLogger())
+	vendorRepo := newFakeVendorRepository()
+	svc := service.NewWorkOrderService(workOrderRepo, unitRepo, propertyRepo, vendorRepo, noopLogger())
 
 	ownerID := uuid.New()
 	property := &domain.Property{ID: uuid.New(), Name: "Willow Creek Apartments", Type: domain.PropertyTypeResidentialMultiUnit, AddressLine1: "123 Main St", OwnerID: ownerID}
@@ -184,7 +264,7 @@ func setupWorkOrderTest(t *testing.T) workOrderTestFixture {
 	unitRepo.units[unit.ID] = unit
 
 	return workOrderTestFixture{
-		svc: svc, workOrderRepo: workOrderRepo, propertyRepo: propertyRepo, unitRepo: unitRepo,
+		svc: svc, workOrderRepo: workOrderRepo, propertyRepo: propertyRepo, unitRepo: unitRepo, vendorRepo: vendorRepo,
 		ownerID: ownerID, property: property, unit: unit,
 	}
 }
@@ -276,6 +356,38 @@ func TestWorkOrderService_CreateWorkOrder(t *testing.T) {
 			t.Fatalf("CreateWorkOrder() unexpected error = %v", err)
 		}
 	})
+
+	t.Run("choosing a vendor auto-fills assigned_to and assigned_to_contact", func(t *testing.T) {
+		f := setupWorkOrderTest(t)
+		vendor := &domain.Vendor{ID: uuid.New(), OwnerID: f.ownerID, CompanyName: "Ace Plumbing", Phone: "555-0100"}
+		f.vendorRepo.vendors[vendor.ID] = vendor
+
+		input := validCreateWorkOrderInput(f.property.ID)
+		input.VendorID = &vendor.ID
+		got, err := f.svc.CreateWorkOrder(context.Background(), f.ownerID, input)
+		if err != nil {
+			t.Fatalf("CreateWorkOrder() unexpected error = %v", err)
+		}
+		if got.AssignedTo != vendor.CompanyName {
+			t.Errorf("CreateWorkOrder() assigned_to = %q, want %q", got.AssignedTo, vendor.CompanyName)
+		}
+		if got.AssignedToContact != vendor.Phone {
+			t.Errorf("CreateWorkOrder() assigned_to_contact = %q, want %q", got.AssignedToContact, vendor.Phone)
+		}
+	})
+
+	t.Run("vendor belonging to a different owner is rejected", func(t *testing.T) {
+		f := setupWorkOrderTest(t)
+		vendor := &domain.Vendor{ID: uuid.New(), OwnerID: uuid.New(), CompanyName: "Someone Else's Vendor"}
+		f.vendorRepo.vendors[vendor.ID] = vendor
+
+		input := validCreateWorkOrderInput(f.property.ID)
+		input.VendorID = &vendor.ID
+		_, err := f.svc.CreateWorkOrder(context.Background(), f.ownerID, input)
+		if !errors.Is(err, domain.ErrNotFound) {
+			t.Fatalf("CreateWorkOrder() error = %v, want %v", err, domain.ErrNotFound)
+		}
+	})
 }
 
 func TestWorkOrderService_UpdateWorkOrder(t *testing.T) {
@@ -316,6 +428,52 @@ func TestWorkOrderService_UpdateWorkOrder(t *testing.T) {
 		_, err := f.svc.UpdateWorkOrder(context.Background(), created.ID, uuid.New(), domain.UpdateWorkOrderInput{Title: &title})
 		if !errors.Is(err, domain.ErrNotFound) {
 			t.Fatalf("UpdateWorkOrder() error = %v, want %v", err, domain.ErrNotFound)
+		}
+	})
+
+	t.Run("setting a vendor auto-fills assigned_to and assigned_to_contact", func(t *testing.T) {
+		vendor := &domain.Vendor{ID: uuid.New(), OwnerID: f.ownerID, CompanyName: "Ace Plumbing", Phone: "555-0100"}
+		f.vendorRepo.vendors[vendor.ID] = vendor
+
+		got, err := f.svc.UpdateWorkOrder(context.Background(), created.ID, f.ownerID, domain.UpdateWorkOrderInput{VendorID: &vendor.ID, VendorIDSet: true})
+		if err != nil {
+			t.Fatalf("UpdateWorkOrder() unexpected error = %v", err)
+		}
+		if got.AssignedTo != vendor.CompanyName {
+			t.Errorf("UpdateWorkOrder() assigned_to = %q, want %q", got.AssignedTo, vendor.CompanyName)
+		}
+		if got.AssignedToContact != vendor.Phone {
+			t.Errorf("UpdateWorkOrder() assigned_to_contact = %q, want %q", got.AssignedToContact, vendor.Phone)
+		}
+	})
+
+	t.Run("vendor belonging to a different owner is rejected", func(t *testing.T) {
+		vendor := &domain.Vendor{ID: uuid.New(), OwnerID: uuid.New(), CompanyName: "Someone Else's Vendor"}
+		f.vendorRepo.vendors[vendor.ID] = vendor
+
+		_, err := f.svc.UpdateWorkOrder(context.Background(), created.ID, f.ownerID, domain.UpdateWorkOrderInput{VendorID: &vendor.ID, VendorIDSet: true})
+		if !errors.Is(err, domain.ErrNotFound) {
+			t.Fatalf("UpdateWorkOrder() error = %v, want %v", err, domain.ErrNotFound)
+		}
+	})
+
+	t.Run("rating out of range is rejected", func(t *testing.T) {
+		bad := 6
+		_, err := f.svc.UpdateWorkOrder(context.Background(), created.ID, f.ownerID, domain.UpdateWorkOrderInput{Rating: &bad})
+		var verrs domain.ValidationErrors
+		if !errors.As(err, &verrs) || !hasField(verrs, "rating") {
+			t.Fatalf("UpdateWorkOrder() error = %v, want a ValidationErrors failure for field %q", err, "rating")
+		}
+	})
+
+	t.Run("valid rating is persisted", func(t *testing.T) {
+		good := 5
+		got, err := f.svc.UpdateWorkOrder(context.Background(), created.ID, f.ownerID, domain.UpdateWorkOrderInput{Rating: &good})
+		if err != nil {
+			t.Fatalf("UpdateWorkOrder() unexpected error = %v", err)
+		}
+		if got.Rating == nil || *got.Rating != good {
+			t.Errorf("UpdateWorkOrder() rating = %v, want %d", got.Rating, good)
 		}
 	})
 }

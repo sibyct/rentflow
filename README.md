@@ -9,6 +9,20 @@ See [`backend/cmd/api/README.md`](backend/cmd/api/README.md) for a
 detailed walkthrough of the service bootstrap: the `main()`/`run()`
 split, dependency wiring order, graceful shutdown, and version metadata.
 
+## Screenshots
+
+| Sign in | Properties |
+| --- | --- |
+| ![Sign in](docs/screenshots/01-sign-in.jpg) | ![Properties list](docs/screenshots/02-properties-list.png) |
+
+| Add Property | Unit detail |
+| --- | --- |
+| ![Add Property](docs/screenshots/03-add-property.png) | ![Unit detail](docs/screenshots/04-unit-detail.png) |
+
+| Maintenance |
+| --- |
+| ![Maintenance](docs/screenshots/05-maintenance.png) |
+
 ## Stack
 
 - **Backend**: Go 1.22+, [chi](https://github.com/go-chi/chi) router, PostgreSQL via

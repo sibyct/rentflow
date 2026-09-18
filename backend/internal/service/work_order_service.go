@@ -19,11 +19,12 @@ type WorkOrderService struct {
 	repo         domain.WorkOrderRepository
 	unitRepo     domain.UnitRepository
 	propertyRepo domain.PropertyRepository
+	vendorRepo   domain.VendorRepository
 	log          *slog.Logger
 }
 
-func NewWorkOrderService(repo domain.WorkOrderRepository, unitRepo domain.UnitRepository, propertyRepo domain.PropertyRepository, log *slog.Logger) *WorkOrderService {
-	return &WorkOrderService{repo: repo, unitRepo: unitRepo, propertyRepo: propertyRepo, log: log}
+func NewWorkOrderService(repo domain.WorkOrderRepository, unitRepo domain.UnitRepository, propertyRepo domain.PropertyRepository, vendorRepo domain.VendorRepository, log *slog.Logger) *WorkOrderService {
+	return &WorkOrderService{repo: repo, unitRepo: unitRepo, propertyRepo: propertyRepo, vendorRepo: vendorRepo, log: log}
 }
 
 var _ domain.WorkOrderService = (*WorkOrderService)(nil)
@@ -33,6 +34,10 @@ func (s *WorkOrderService) CreateWorkOrder(ctx context.Context, ownerID uuid.UUI
 		return nil, fmt.Errorf("create work order: %w", err)
 	}
 	if err := s.validateUnitBelongsToProperty(ctx, input.UnitID, input.PropertyID); err != nil {
+		return nil, fmt.Errorf("create work order: %w", err)
+	}
+	vendor, err := s.resolveVendor(ctx, input.VendorID, ownerID)
+	if err != nil {
 		return nil, fmt.Errorf("create work order: %w", err)
 	}
 
@@ -66,6 +71,7 @@ func (s *WorkOrderService) CreateWorkOrder(ctx context.Context, ownerID uuid.UUI
 		ReportedByContact:  input.ReportedByContact,
 		AssignedTo:         input.AssignedTo,
 		AssignedToContact:  input.AssignedToContact,
+		VendorID:           input.VendorID,
 		AccessInstructions: input.AccessInstructions,
 		ScheduledStart:     input.ScheduledStart,
 		ScheduledEnd:       input.ScheduledEnd,
@@ -81,6 +87,13 @@ func (s *WorkOrderService) CreateWorkOrder(ctx context.Context, ownerID uuid.UUI
 	}
 	if input.Priority == "" {
 		w.Priority = domain.WorkOrderPriorityMedium
+	}
+	// AssignedTo is a display label; a chosen vendor is always the
+	// source of truth for it while VendorID is set — see
+	// AssignedTo/AssignedToContact's doc comment on WorkOrder.
+	if vendor != nil {
+		w.AssignedTo = vendor.CompanyName
+		w.AssignedToContact = vendor.Phone
 	}
 
 	if err := s.repo.Create(ctx, w); err != nil {
@@ -197,6 +210,27 @@ func (s *WorkOrderService) UpdateWorkOrder(ctx context.Context, id, ownerID uuid
 	}
 	if input.AssignedToContact != nil {
 		w.AssignedToContact = *input.AssignedToContact
+	}
+	if input.VendorIDSet {
+		vendor, err := s.resolveVendor(ctx, input.VendorID, ownerID)
+		if err != nil {
+			return nil, fmt.Errorf("update work order %s: %w", id, err)
+		}
+		w.VendorID = input.VendorID
+		if vendor != nil {
+			// AssignedTo/AssignedToContact stay the vendor's display
+			// info while a vendor is chosen — see CreateWorkOrder's
+			// identical rationale.
+			w.AssignedTo = vendor.CompanyName
+			w.AssignedToContact = vendor.Phone
+		}
+	}
+	if input.Rating != nil {
+		if *input.Rating < 1 || *input.Rating > 5 {
+			verrs = append(verrs, &domain.ValidationError{Field: "rating", Message: "must be between 1 and 5"})
+		} else {
+			w.Rating = input.Rating
+		}
 	}
 	if input.AccessInstructions != nil {
 		w.AccessInstructions = *input.AccessInstructions
@@ -399,6 +433,24 @@ func (s *WorkOrderService) validateUnitBelongsToProperty(ctx context.Context, un
 		return domain.ValidationErrors{{Field: "unit_id", Message: "does not belong to this property"}}
 	}
 	return nil
+}
+
+// resolveVendor is nil-safe (a work order may have no vendor, assigned
+// only to freeform internal staff) and guards against a vendor_id that
+// exists but belongs to someone else, same IDOR-safe pattern as
+// requireOwnedProperty.
+func (s *WorkOrderService) resolveVendor(ctx context.Context, vendorID *uuid.UUID, ownerID uuid.UUID) (*domain.Vendor, error) {
+	if vendorID == nil {
+		return nil, nil
+	}
+	v, err := s.vendorRepo.GetByID(ctx, *vendorID)
+	if err != nil {
+		return nil, err
+	}
+	if v.OwnerID != ownerID {
+		return nil, domain.ErrNotFound
+	}
+	return v, nil
 }
 
 func (s *WorkOrderService) logActivity(ctx context.Context, workOrderID uuid.UUID, kind domain.MaintenanceActivityKind, message string, oldValue, newValue *string) {

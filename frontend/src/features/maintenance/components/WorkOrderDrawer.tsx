@@ -18,7 +18,6 @@ import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
 import ToggleButton from '@mui/material/ToggleButton';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
-import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import AddCircleOutlineOutlined from '@mui/icons-material/AddCircleOutlineOutlined';
 import CheckCircleOutlined from '@mui/icons-material/CheckCircleOutlined';
@@ -31,6 +30,7 @@ import { ApiError } from '@/api/client';
 import { tokens } from '@/app/tokens';
 import type { PropertyRow } from '@/features/properties/mock/propertyRows';
 import { useUnits } from '@/features/units/hooks/useUnitsQueries';
+import { VendorRatingInput, VendorSelector } from '@/features/vendors/components/VendorSelector';
 import { toFormValues } from '../api/workOrdersApi';
 import {
   useAddWorkOrderNote,
@@ -136,6 +136,8 @@ export function WorkOrderDrawer({ open, onClose, propertyId, unitId, properties,
 
   const priority = watch('priority');
   const status = watch('status');
+  const category = watch('category');
+  const vendorId = watch('vendorId');
   const isSaving = createWorkOrder.isPending || updateWorkOrder.isPending;
   const isWaitingForRecord = isEditMode && (isLoadingWorkOrder || !existingWorkOrder);
   const pickedProperty = properties?.find((p) => p.id === effectivePropertyId);
@@ -360,10 +362,40 @@ export function WorkOrderDrawer({ open, onClose, propertyId, unitId, properties,
                 </FormSection>
 
                 <FormSection title="Assignment">
+                  <Controller
+                    name="vendorId"
+                    control={control}
+                    render={({ field }) => (
+                      <VendorSelector
+                        category={category}
+                        value={field.value ?? ''}
+                        onChange={(vendor) => {
+                          field.onChange(vendor?.id ?? '');
+                          if (vendor) {
+                            setValue('assignedTo', vendor.companyName);
+                            setValue('assignedToContact', vendor.phone);
+                          }
+                        }}
+                      />
+                    )}
+                  />
                   <Stack direction="row" spacing={2}>
-                    <Controller name="assignedTo" control={control} render={({ field }) => <TextField {...field} label="Assigned to" fullWidth placeholder="Staff or vendor name" />} />
+                    <Controller
+                      name="assignedTo"
+                      control={control}
+                      render={({ field }) => <TextField {...field} label="Assigned to" fullWidth placeholder="Staff or vendor name" helperText={vendorId ? 'Filled from the selected vendor' : 'No vendor selected — freeform staff assignment'} />}
+                    />
                     <Controller name="assignedToContact" control={control} render={({ field }) => <TextField {...field} label="Contact" fullWidth />} />
                   </Stack>
+                  {vendorId && (
+                    <Controller
+                      name="rating"
+                      control={control}
+                      render={({ field }) => (
+                        <VendorRatingInput value={field.value ? Number(field.value) : null} onChange={(v) => field.onChange(v != null ? String(v) : '')} />
+                      )}
+                    />
+                  )}
                   <Stack direction="row" spacing={2}>
                     <Controller name="scheduledStart" control={control} render={({ field }) => <TextField {...field} label="Scheduled start" type="datetime-local" fullWidth slotProps={{ inputLabel: { shrink: true } }} />} />
                     <Controller name="scheduledEnd" control={control} render={({ field }) => <TextField {...field} label="Scheduled end" type="datetime-local" fullWidth slotProps={{ inputLabel: { shrink: true } }} />} />
@@ -504,6 +536,15 @@ export function WorkOrderDrawer({ open, onClose, propertyId, unitId, properties,
             <Typography sx={{ fontSize: 13, color: tokens.slate[600] }}>Add the actual cost and a completion photo link before closing this out — or skip and complete anyway.</Typography>
             <Controller name="actualCost" control={control} render={({ field }) => <TextField {...field} label="Actual cost" type="number" fullWidth size="small" slotProps={{ input: { startAdornment: '$' } }} />} />
             <Controller name="photoLink" control={control} render={({ field }) => <TextField {...field} label="Completion photo link" fullWidth size="small" />} />
+            {vendorId && (
+              <Controller
+                name="rating"
+                control={control}
+                render={({ field }) => (
+                  <VendorRatingInput value={field.value ? Number(field.value) : null} onChange={(v) => field.onChange(v != null ? String(v) : '')} />
+                )}
+              />
+            )}
           </Stack>
         </DialogContent>
         <DialogActions sx={{ p: 2.5, pt: 0 }}>

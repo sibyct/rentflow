@@ -315,6 +315,14 @@ func parseWorkOrderListOptions(r *http.Request) (domain.WorkOrderListOptions, er
 			opts.Filter.PropertyID = &id
 		}
 	}
+	if v := q.Get("vendor_id"); v != "" {
+		id, err := uuid.Parse(v)
+		if err != nil {
+			verrs = append(verrs, &domain.ValidationError{Field: "vendor_id", Message: "must be a valid id"})
+		} else {
+			opts.Filter.VendorID = &id
+		}
+	}
 	if v := q.Get("status"); v != "" {
 		s := domain.WorkOrderStatus(v)
 		if !s.Valid() {

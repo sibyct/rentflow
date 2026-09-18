@@ -14,6 +14,8 @@ import { UnitsPage } from './pages/UnitsPage';
 import { LeasesPage } from './pages/LeasesPage';
 import { LeaseDetailPage } from './pages/LeaseDetailPage';
 import { MaintenancePage } from './pages/MaintenancePage';
+import { VendorsPage } from './pages/VendorsPage';
+import { VendorDetailPage } from './pages/VendorDetailPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { PlaceholderPage } from '@/shared/components';
 
@@ -49,9 +51,11 @@ export function AppRouter() {
 
         <Route path="maintenance" element={<MaintenancePage />} />
 
+        <Route path="vendors" element={<VendorsPage />} />
+        <Route path="vendors/:id" element={<VendorDetailPage />} />
+
         {/* Nav destinations with no real feature yet — see navConfig.tsx
             and README for how to replace one of these with a real page. */}
-        <Route path="vendors" element={<PlaceholderPage label="Vendors" />} />
         <Route path="settings" element={<PlaceholderPage label="Settings" />} />
 
         <Route path="*" element={<NotFoundPage />} />
