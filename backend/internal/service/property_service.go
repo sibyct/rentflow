@@ -15,13 +15,14 @@ import (
 const propertyCacheTTL = 5 * time.Minute
 
 type PropertyService struct {
-	repo  domain.PropertyRepository
-	cache domain.Cache // may be nil; caching is a performance optimization, not a dependency
-	log   *slog.Logger
+	repo     domain.PropertyRepository
+	unitRepo domain.UnitRepository
+	cache    domain.Cache // may be nil; caching is a performance optimization, not a dependency
+	log      *slog.Logger
 }
 
-func NewPropertyService(repo domain.PropertyRepository, cache domain.Cache, log *slog.Logger) *PropertyService {
-	return &PropertyService{repo: repo, cache: cache, log: log}
+func NewPropertyService(repo domain.PropertyRepository, unitRepo domain.UnitRepository, cache domain.Cache, log *slog.Logger) *PropertyService {
+	return &PropertyService{repo: repo, unitRepo: unitRepo, cache: cache, log: log}
 }
 
 var _ domain.PropertyService = (*PropertyService)(nil)
@@ -80,6 +81,37 @@ func (s *PropertyService) CreateProperty(ctx context.Context, input domain.Creat
 
 	if err := s.repo.Create(ctx, p); err != nil {
 		return nil, fmt.Errorf("create property: %w", err)
+	}
+
+	// A residential_single_unit property IS the unit it contains — there
+	// is exactly one, and it's not separately managed in the UI — so an
+	// implicit unit row is created here rather than requiring a second
+	// "add unit" step for every single-unit property. This keeps
+	// GetPropertyUnitStats uniform across property types (see
+	// UnitRepository): a single-unit property's stats come from this one
+	// real row instead of a special case. The property form doesn't
+	// collect bedrooms/bathrooms/rent today, so there's nothing to copy
+	// onto it yet — those can be filled in later via the (hidden-from-
+	// list) unit record if that data entry point is added.
+	//
+	// This insert isn't wrapped in the same transaction as the property
+	// insert above (nothing else in this codebase uses transactions
+	// across repositories yet); a failure here leaves the property
+	// committed without its implicit unit, which is surfaced to the
+	// caller as an error rather than silently swallowed.
+	if p.Type == domain.PropertyTypeResidentialSingleUnit {
+		unit := &domain.Unit{
+			ID:         uuid.New(),
+			PropertyID: p.ID,
+			UnitName:   "Unit 1",
+			Type:       domain.UnitTypeOther,
+			Status:     domain.UnitStatusVacant,
+			CreatedAt:  now,
+			UpdatedAt:  now,
+		}
+		if err := s.unitRepo.Create(ctx, unit); err != nil {
+			return nil, fmt.Errorf("create property: implicit unit: %w", err)
+		}
 	}
 
 	return p, nil

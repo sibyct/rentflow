@@ -77,15 +77,60 @@ func (f *fakePropertyService) BulkUpdateStatus(_ context.Context, _ uuid.UUID, _
 	return 0, nil
 }
 
+// fakeUnitService is a minimal stand-in for domain.UnitService: the unit
+// service layer itself is covered by table-driven tests in
+// internal/service, so this router test only needs enough behavior for
+// PropertyHandler's stats-decoration calls (GetPropertyUnitStats,
+// GetPropertyUnitStatsBulk) not to panic.
+type fakeUnitService struct{}
+
+func (f *fakeUnitService) CreateUnit(_ context.Context, _ uuid.UUID, _ domain.CreateUnitInput) (*domain.Unit, error) {
+	return nil, domain.ErrNotFound
+}
+
+func (f *fakeUnitService) CreateUnitsBulk(_ context.Context, _, _ uuid.UUID, _ []domain.CreateUnitInput) ([]*domain.Unit, error) {
+	return nil, domain.ErrNotFound
+}
+
+func (f *fakeUnitService) GetUnit(_ context.Context, _, _ uuid.UUID) (*domain.Unit, error) {
+	return nil, domain.ErrNotFound
+}
+
+func (f *fakeUnitService) ListUnitsByProperty(_ context.Context, _, _ uuid.UUID) ([]*domain.Unit, error) {
+	return []*domain.Unit{}, nil
+}
+
+func (f *fakeUnitService) ListUnitsForOwner(_ context.Context, _ uuid.UUID, _ domain.UnitListOptions) ([]*domain.UnitWithProperty, int, error) {
+	return []*domain.UnitWithProperty{}, 0, nil
+}
+
+func (f *fakeUnitService) UpdateUnit(_ context.Context, _, _ uuid.UUID, _ domain.UpdateUnitInput) (*domain.Unit, error) {
+	return nil, domain.ErrNotFound
+}
+
+func (f *fakeUnitService) DeleteUnit(_ context.Context, _, _ uuid.UUID) error {
+	return domain.ErrNotFound
+}
+
+func (f *fakeUnitService) GetPropertyUnitStats(_ context.Context, _, _ uuid.UUID) (*domain.PropertyUnitStats, error) {
+	return nil, domain.ErrNotFound
+}
+
+func (f *fakeUnitService) GetPropertyUnitStatsBulk(_ context.Context, _ []uuid.UUID) (map[uuid.UUID]*domain.PropertyUnitStats, error) {
+	return map[uuid.UUID]*domain.PropertyUnitStats{}, nil
+}
+
 func newTestRouter() http.Handler {
 	authSvc := &fakeAuthService{userID: uuid.New()}
 	propertySvc := &fakePropertyService{}
+	unitSvc := &fakeUnitService{}
 
 	return transporthttp.NewRouter(transporthttp.RouterConfig{
 		Logger:          slog.New(slog.NewTextHandler(bytes.NewBuffer(nil), nil)),
 		AllowedOrigins:  []string{"http://localhost:5173"},
 		AuthService:     authSvc,
 		PropertyService: propertySvc,
+		UnitService:     unitSvc,
 		AuthHandler:     handlers.NewAuthHandler(authSvc, 15*time.Minute, time.Hour, "", false),
 		HealthHandler:   handlers.NewHealthHandler(alwaysUpPinger{}, alwaysUpPinger{}),
 		VersionHandler:  handlers.NewVersionHandler("test-version", "test-commit", "test-build-date"),

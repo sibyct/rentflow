@@ -18,9 +18,21 @@ import type { SvgIconComponent } from '@mui/icons-material';
 import { ApiError } from '@/api/client';
 import { tokens } from '@/app/tokens';
 import { ERROR_STATE_PRESETS, ErrorState, LoadingSpinner } from '@/shared/components';
+import { UnitsSection } from '@/features/units';
 import { useProperty, useUpdatePropertyStatus } from '../hooks/usePropertiesQueries';
 import type { PropertyRow, PropertyRowStatus } from '../mock/propertyRows';
 import { PropertyFormModal } from './PropertyFormModal';
+
+// A residential_single_unit property IS its one (backend-auto-created,
+// not separately managed) unit — see PropertyService.CreateProperty —
+// so the Units section only makes sense for property types that can
+// genuinely have more than one.
+const SHOWS_UNITS_SECTION: Record<string, boolean> = {
+  'Residential – Single Unit': false,
+  'Residential – Multi Unit': true,
+  Commercial: true,
+  'Mixed Use': true,
+};
 
 const STATUS_COLOR: Record<PropertyRowStatus, 'success' | 'info' | 'default'> = {
   Active: 'success',
@@ -28,6 +40,7 @@ const STATUS_COLOR: Record<PropertyRowStatus, 'success' | 'info' | 'default'> = 
   Archived: 'default',
 };
 
+const currency = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
 const dateFormatter = new Intl.DateTimeFormat('en-US', { dateStyle: 'medium' });
 const dateTimeFormatter = new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeStyle: 'short' });
 
@@ -171,12 +184,19 @@ export function PropertyDetailScreen({ propertyId }: PropertyDetailScreenProps) 
 
       <Stack direction="row" spacing={2} sx={{ flexWrap: 'wrap', mb: 2.5 }}>
         <StatTile label="Type" value={type.primary} secondary={type.secondary} />
-        <StatTile label="Units" value={String(property.units)} secondary={property.units > 0 ? undefined : 'Not leased'} />
-        {/* occupancy_pct/collected_this_month are backend placeholders
-            (always 0 — no leases/payments feature exists yet), so "—" /
-            "Not tracked" here rather than a real-looking "0%" / "$0". */}
-        <StatTile label="Occupancy" value="—" secondary="Not tracked" />
-        <StatTile label="Collected this month" value="—" secondary="Not tracked" />
+        <StatTile label="Units" value={String(property.unitCount)} secondary={property.unitCount > 0 ? undefined : 'No units yet'} />
+        {/* Computed server-side from real unit rows (see
+            UnitRepository.GetPropertyUnitStats) — "—" / "Not tracked"
+            only while there are no units to compute from yet, not a
+            fake-looking "0%" / "$0". collected_this_month still
+            approximates rent owed by occupied units, not a real
+            payments feature. */}
+        <StatTile label="Occupancy" value={property.unitCount > 0 ? `${property.occupancyPct}%` : '—'} secondary={property.unitCount > 0 ? undefined : 'Not tracked'} />
+        <StatTile
+          label="Collected this month"
+          value={property.unitCount > 0 ? currency.format(property.collectedThisMonth) : '—'}
+          secondary={property.unitCount > 0 ? undefined : 'Not tracked'}
+        />
       </Stack>
 
       <Stack direction={{ xs: 'column', md: 'row' }} spacing={2.5} sx={{ alignItems: 'flex-start' }}>
@@ -224,6 +244,8 @@ export function PropertyDetailScreen({ propertyId }: PropertyDetailScreenProps) 
               </Typography>
             </Box>
           </Paper>
+
+          {SHOWS_UNITS_SECTION[property.type] && <UnitsSection propertyId={propertyId} propertyName={property.name} />}
         </Stack>
 
         <Stack spacing={2.5} sx={{ flex: '1 1 260px', minWidth: 0, width: '100%' }}>

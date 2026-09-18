@@ -14,11 +14,12 @@ import (
 )
 
 type PropertyHandler struct {
-	svc domain.PropertyService
+	svc     domain.PropertyService
+	unitSvc domain.UnitService
 }
 
-func NewPropertyHandler(svc domain.PropertyService) *PropertyHandler {
-	return &PropertyHandler{svc: svc}
+func NewPropertyHandler(svc domain.PropertyService, unitSvc domain.UnitService) *PropertyHandler {
+	return &PropertyHandler{svc: svc, unitSvc: unitSvc}
 }
 
 func (h *PropertyHandler) Create(w http.ResponseWriter, r *http.Request) {
@@ -69,7 +70,16 @@ func (h *PropertyHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response.JSON(w, http.StatusOK, dto.NewPropertyResponse(p))
+	resp := dto.NewPropertyResponse(p)
+	// Stats are enrichment, not core data: a property that was just
+	// found successfully shouldn't 500 out because the unit-stats lookup
+	// hit an unexpected error, so this degrades to the zero-value stats
+	// dto.NewPropertyResponse already set rather than failing the request.
+	if stats, err := h.unitSvc.GetPropertyUnitStats(r.Context(), p.ID, claims.UserID); err == nil {
+		resp = resp.WithUnitStats(stats)
+	}
+
+	response.JSON(w, http.StatusOK, resp)
 }
 
 func (h *PropertyHandler) List(w http.ResponseWriter, r *http.Request) {
@@ -91,7 +101,25 @@ func (h *PropertyHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response.JSONWithMeta(w, http.StatusOK, dto.NewPropertyListResponse(properties), dto.PropertyListMeta{
+	propertyIDs := make([]uuid.UUID, len(properties))
+	for i, p := range properties {
+		propertyIDs[i] = p.ID
+	}
+	// One batched stats query for the whole page rather than one per
+	// row — see GetPropertyUnitStatsBulk. Same best-effort degradation
+	// as Get: a stats-lookup failure doesn't fail an otherwise-successful
+	// list response.
+	statsByProperty, err := h.unitSvc.GetPropertyUnitStatsBulk(r.Context(), propertyIDs)
+	if err != nil {
+		statsByProperty = nil
+	}
+
+	respList := dto.NewPropertyListResponse(properties)
+	for i, p := range properties {
+		respList[i] = respList[i].WithUnitStats(statsByProperty[p.ID])
+	}
+
+	response.JSONWithMeta(w, http.StatusOK, respList, dto.PropertyListMeta{
 		Total:  total,
 		Limit:  opts.Limit,
 		Offset: opts.Offset,

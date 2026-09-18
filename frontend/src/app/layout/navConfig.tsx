@@ -4,7 +4,6 @@ import DashboardOutlined from '@mui/icons-material/DashboardOutlined';
 import HomeOutlined from '@mui/icons-material/HomeOutlined';
 import ApartmentOutlined from '@mui/icons-material/ApartmentOutlined';
 import DescriptionOutlined from '@mui/icons-material/DescriptionOutlined';
-import PersonOutlineOutlined from '@mui/icons-material/PersonOutlineOutlined';
 import BuildOutlined from '@mui/icons-material/BuildOutlined';
 import StorefrontOutlined from '@mui/icons-material/StorefrontOutlined';
 import CalculateOutlined from '@mui/icons-material/CalculateOutlined';
@@ -43,7 +42,6 @@ export const navGroups: NavGroup[] = [
       { id: 'properties', label: 'Properties', icon: HomeOutlined, path: '/properties' },
       { id: 'units', label: 'Units', icon: ApartmentOutlined, path: '/units' },
       { id: 'leases', label: 'Leases', icon: DescriptionOutlined, path: '/leases', badge: { count: 3, kind: 'info' } },
-      { id: 'residents', label: 'Residents', icon: PersonOutlineOutlined, path: '/residents' },
     ],
   },
   {

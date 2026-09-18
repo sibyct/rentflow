@@ -17,6 +17,7 @@ interface PropertyWire {
   status: string;
   occupancy_pct: number;
   collected_this_month: number;
+  unit_count: number;
 }
 
 interface PropertyListMetaWire {
@@ -50,6 +51,7 @@ interface PropertyDetailWire {
   status: string;
   occupancy_pct: number;
   collected_this_month: number;
+  unit_count: number;
   created_at: string;
   updated_at: string;
 }
@@ -95,6 +97,7 @@ function toPropertyRow(wire: PropertyWire): PropertyRow {
     units: wire.units,
     occupancyPct: wire.occupancy_pct,
     collectedThisMonth: wire.collected_this_month,
+    unitCount: wire.unit_count,
     status: WIRE_TO_STATUS[wire.status] ?? 'Onboarding',
   };
 }
@@ -121,6 +124,7 @@ function toPropertyDetail(wire: PropertyDetailWire): PropertyDetail {
     status: WIRE_TO_STATUS[wire.status] ?? 'Onboarding',
     occupancyPct: wire.occupancy_pct,
     collectedThisMonth: wire.collected_this_month,
+    unitCount: wire.unit_count,
     createdAt: wire.created_at,
     updatedAt: wire.updated_at,
   };
