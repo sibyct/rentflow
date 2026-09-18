@@ -48,7 +48,6 @@ export function AppRouter() {
 
         {/* Nav destinations with no real feature yet — see navConfig.tsx
             and README for how to replace one of these with a real page. */}
-        <Route path="residents" element={<PlaceholderPage label="Residents" />} />
         <Route path="maintenance" element={<PlaceholderPage label="Maintenance" />} />
         <Route path="vendors" element={<PlaceholderPage label="Vendors" />} />
         <Route path="settings" element={<PlaceholderPage label="Settings" />} />
