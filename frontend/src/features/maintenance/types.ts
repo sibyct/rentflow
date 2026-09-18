@@ -59,6 +59,11 @@ export interface WorkOrderRow {
   status: WorkOrderStatus;
   isOverdue: boolean;
   assignedTo: string;
+  /** Set only when assignedTo came from a real Vendor record rather than freeform text — see WorkOrder.VendorID's backend doc comment. */
+  vendorId: string;
+  vendorName: string;
+  /** 1-5 star rating a manager gives the vendor after completion; null until rated. */
+  rating: number | null;
   dueDate: string;
   createdAt: string;
 }

@@ -89,18 +89,26 @@ func (s WorkOrderStatus) IsOpen() bool {
 // freeform URLs, not real file uploads — there is no file-storage
 // feature here either.
 type WorkOrder struct {
-	ID                 uuid.UUID
-	PropertyID         uuid.UUID
-	UnitID             *uuid.UUID
-	Title              string
-	Description        string
-	Category           WorkOrderCategory
-	Priority           WorkOrderPriority
-	Status             WorkOrderStatus
-	ReportedBy         string
-	ReportedByContact  string
-	AssignedTo         string
-	AssignedToContact  string
+	ID                uuid.UUID
+	PropertyID        uuid.UUID
+	UnitID            *uuid.UUID
+	Title             string
+	Description       string
+	Category          WorkOrderCategory
+	Priority          WorkOrderPriority
+	Status            WorkOrderStatus
+	ReportedBy        string
+	ReportedByContact string
+	AssignedTo        string
+	AssignedToContact string
+	// VendorID links to a real Vendor record, alongside the freeform
+	// AssignedTo/AssignedToContact above (kept as the fallback for
+	// internal staff, who aren't vendors) — see domain/vendor.go.
+	VendorID *uuid.UUID
+	// Rating is the optional 1-5 star rating a manager gives the vendor
+	// after marking this work order completed — nil until then, and
+	// meaningless without VendorID set.
+	Rating             *int
 	AccessInstructions string
 	ScheduledStart     *time.Time
 	ScheduledEnd       *time.Time
@@ -138,6 +146,7 @@ type CreateWorkOrderInput struct {
 	ReportedByContact  string
 	AssignedTo         string
 	AssignedToContact  string
+	VendorID           *uuid.UUID
 	AccessInstructions string
 	ScheduledStart     *time.Time
 	ScheduledEnd       *time.Time
@@ -164,6 +173,9 @@ type UpdateWorkOrderInput struct {
 	ReportedByContact  *string
 	AssignedTo         *string
 	AssignedToContact  *string
+	VendorID           *uuid.UUID
+	VendorIDSet        bool // VendorID is itself nullable, so "unassign the vendor" needs its own flag
+	Rating             *int
 	AccessInstructions *string
 	ScheduledStart     *time.Time
 	ScheduledEnd       *time.Time
@@ -206,6 +218,7 @@ type WorkOrderListFilter struct {
 	Priority   *WorkOrderPriority
 	Category   *WorkOrderCategory
 	AssignedTo string
+	VendorID   *uuid.UUID
 	Overdue    bool
 	Unassigned bool
 }
@@ -226,6 +239,7 @@ type WorkOrderWithProperty struct {
 	WorkOrder
 	PropertyName string
 	UnitName     string // empty when WorkOrder.UnitID is nil (a property-wide work order)
+	VendorName   string // empty when WorkOrder.VendorID is nil
 }
 
 // WorkOrderSummary backs the list page's clickable summary counters.

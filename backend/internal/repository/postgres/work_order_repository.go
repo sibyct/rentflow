@@ -26,28 +26,28 @@ var _ domain.WorkOrderRepository = (*WorkOrderRepository)(nil)
 
 const workOrderColumns = `
 	id, property_id, unit_id, title, description, category, priority, status,
-	reported_by, reported_by_contact, assigned_to, assigned_to_contact, access_instructions,
+	reported_by, reported_by_contact, assigned_to, assigned_to_contact, vendor_id, rating, access_instructions,
 	scheduled_start, scheduled_end, due_date, estimated_cost, actual_cost, photo_link, invoice_link,
 	internal_notes, recurring_rule_id, completed_at, created_at, updated_at`
 
 // qualifiedWorkOrderColumns is workOrderColumns aliased to "w." for
-// ListForOwner's join to properties/units — all three tables have id/
-// created_at/updated_at, so an unqualified SELECT across the join would
-// be ambiguous.
+// ListForOwner's join to properties/units/vendors — all four tables
+// have id/created_at/updated_at, so an unqualified SELECT across the
+// join would be ambiguous.
 const qualifiedWorkOrderColumns = `
 	w.id, w.property_id, w.unit_id, w.title, w.description, w.category, w.priority, w.status,
-	w.reported_by, w.reported_by_contact, w.assigned_to, w.assigned_to_contact, w.access_instructions,
+	w.reported_by, w.reported_by_contact, w.assigned_to, w.assigned_to_contact, w.vendor_id, w.rating, w.access_instructions,
 	w.scheduled_start, w.scheduled_end, w.due_date, w.estimated_cost, w.actual_cost, w.photo_link, w.invoice_link,
 	w.internal_notes, w.recurring_rule_id, w.completed_at, w.created_at, w.updated_at`
 
 func (r *WorkOrderRepository) Create(ctx context.Context, w *domain.WorkOrder) error {
 	const q = `
 		INSERT INTO work_orders (` + workOrderColumns + `)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)`
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)`
 
 	_, err := r.pool.Exec(ctx, q,
 		w.ID, w.PropertyID, w.UnitID, w.Title, w.Description, w.Category, w.Priority, w.Status,
-		w.ReportedBy, w.ReportedByContact, w.AssignedTo, w.AssignedToContact, w.AccessInstructions,
+		w.ReportedBy, w.ReportedByContact, w.AssignedTo, w.AssignedToContact, w.VendorID, w.Rating, w.AccessInstructions,
 		w.ScheduledStart, w.ScheduledEnd, w.DueDate, w.EstimatedCost, w.ActualCost, w.PhotoLink, w.InvoiceLink,
 		w.InternalNotes, w.RecurringRuleID, w.CompletedAt, w.CreatedAt, w.UpdatedAt,
 	)
@@ -111,6 +111,10 @@ func (r *WorkOrderRepository) ListForOwner(ctx context.Context, opts domain.Work
 		args = append(args, opts.Filter.AssignedTo)
 		where = append(where, fmt.Sprintf("w.assigned_to = $%d", len(args)))
 	}
+	if opts.Filter.VendorID != nil {
+		args = append(args, *opts.Filter.VendorID)
+		where = append(where, fmt.Sprintf("w.vendor_id = $%d", len(args)))
+	}
 	if opts.Filter.Overdue {
 		where = append(where, isOverdueSQL)
 	}
@@ -138,10 +142,11 @@ func (r *WorkOrderRepository) ListForOwner(ctx context.Context, opts domain.Work
 
 	args = append(args, opts.Limit, opts.Offset)
 	q := fmt.Sprintf(
-		`SELECT %s, p.name AS property_name, COALESCE(u.unit_name, '') AS unit_name
+		`SELECT %s, p.name AS property_name, COALESCE(u.unit_name, '') AS unit_name, COALESCE(ven.company_name, '') AS vendor_name
 		 FROM work_orders w
 		 JOIN properties p ON p.id = w.property_id
 		 LEFT JOIN units u ON u.id = w.unit_id
+		 LEFT JOIN vendors ven ON ven.id = w.vendor_id
 		 WHERE %s
 		 ORDER BY %s, w.id ASC
 		 LIMIT $%d OFFSET $%d`,
@@ -180,15 +185,15 @@ func (r *WorkOrderRepository) Update(ctx context.Context, w *domain.WorkOrder) e
 		UPDATE work_orders
 		SET unit_id = $2, title = $3, description = $4, category = $5, priority = $6, status = $7,
 			reported_by = $8, reported_by_contact = $9, assigned_to = $10, assigned_to_contact = $11,
-			access_instructions = $12, scheduled_start = $13, scheduled_end = $14, due_date = $15,
-			estimated_cost = $16, actual_cost = $17, photo_link = $18, invoice_link = $19,
-			internal_notes = $20, completed_at = $21, updated_at = $22
+			vendor_id = $12, rating = $13, access_instructions = $14, scheduled_start = $15, scheduled_end = $16,
+			due_date = $17, estimated_cost = $18, actual_cost = $19, photo_link = $20, invoice_link = $21,
+			internal_notes = $22, completed_at = $23, updated_at = $24
 		WHERE id = $1`
 
 	tag, err := r.pool.Exec(ctx, q,
 		w.ID, w.UnitID, w.Title, w.Description, w.Category, w.Priority, w.Status,
 		w.ReportedBy, w.ReportedByContact, w.AssignedTo, w.AssignedToContact,
-		w.AccessInstructions, w.ScheduledStart, w.ScheduledEnd, w.DueDate,
+		w.VendorID, w.Rating, w.AccessInstructions, w.ScheduledStart, w.ScheduledEnd, w.DueDate,
 		w.EstimatedCost, w.ActualCost, w.PhotoLink, w.InvoiceLink,
 		w.InternalNotes, w.CompletedAt, w.UpdatedAt,
 	)
@@ -295,48 +300,51 @@ func (r *WorkOrderRepository) AddActivity(ctx context.Context, a *domain.Mainten
 
 func scanWorkOrder(row rowScanner) (*domain.WorkOrder, error) {
 	var w domain.WorkOrder
-	var unitID uuid.NullUUID
+	var unitID, vendorID uuid.NullUUID
+	var rating sql.NullInt32
 	var scheduledStart, scheduledEnd, dueDate, completedAt sql.NullTime
 	var estimatedCost, actualCost sql.NullFloat64
 	var recurringRuleID uuid.NullUUID
 
 	err := row.Scan(
 		&w.ID, &w.PropertyID, &unitID, &w.Title, &w.Description, &w.Category, &w.Priority, &w.Status,
-		&w.ReportedBy, &w.ReportedByContact, &w.AssignedTo, &w.AssignedToContact, &w.AccessInstructions,
+		&w.ReportedBy, &w.ReportedByContact, &w.AssignedTo, &w.AssignedToContact, &vendorID, &rating, &w.AccessInstructions,
 		&scheduledStart, &scheduledEnd, &dueDate, &estimatedCost, &actualCost, &w.PhotoLink, &w.InvoiceLink,
 		&w.InternalNotes, &recurringRuleID, &completedAt, &w.CreatedAt, &w.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err
 	}
-	applyWorkOrderNullables(&w, unitID, scheduledStart, scheduledEnd, dueDate, completedAt, estimatedCost, actualCost, recurringRuleID)
+	applyWorkOrderNullables(&w, unitID, vendorID, rating, scheduledStart, scheduledEnd, dueDate, completedAt, estimatedCost, actualCost, recurringRuleID)
 	return &w, nil
 }
 
 func scanWorkOrderWithProperty(row rowScanner) (*domain.WorkOrderWithProperty, error) {
 	var w domain.WorkOrderWithProperty
-	var unitID uuid.NullUUID
+	var unitID, vendorID uuid.NullUUID
+	var rating sql.NullInt32
 	var scheduledStart, scheduledEnd, dueDate, completedAt sql.NullTime
 	var estimatedCost, actualCost sql.NullFloat64
 	var recurringRuleID uuid.NullUUID
 
 	err := row.Scan(
 		&w.ID, &w.PropertyID, &unitID, &w.Title, &w.Description, &w.Category, &w.Priority, &w.Status,
-		&w.ReportedBy, &w.ReportedByContact, &w.AssignedTo, &w.AssignedToContact, &w.AccessInstructions,
+		&w.ReportedBy, &w.ReportedByContact, &w.AssignedTo, &w.AssignedToContact, &vendorID, &rating, &w.AccessInstructions,
 		&scheduledStart, &scheduledEnd, &dueDate, &estimatedCost, &actualCost, &w.PhotoLink, &w.InvoiceLink,
 		&w.InternalNotes, &recurringRuleID, &completedAt, &w.CreatedAt, &w.UpdatedAt,
-		&w.PropertyName, &w.UnitName,
+		&w.PropertyName, &w.UnitName, &w.VendorName,
 	)
 	if err != nil {
 		return nil, err
 	}
-	applyWorkOrderNullables(&w.WorkOrder, unitID, scheduledStart, scheduledEnd, dueDate, completedAt, estimatedCost, actualCost, recurringRuleID)
+	applyWorkOrderNullables(&w.WorkOrder, unitID, vendorID, rating, scheduledStart, scheduledEnd, dueDate, completedAt, estimatedCost, actualCost, recurringRuleID)
 	return &w, nil
 }
 
 func applyWorkOrderNullables(
 	w *domain.WorkOrder,
-	unitID uuid.NullUUID,
+	unitID, vendorID uuid.NullUUID,
+	rating sql.NullInt32,
 	scheduledStart, scheduledEnd, dueDate, completedAt sql.NullTime,
 	estimatedCost, actualCost sql.NullFloat64,
 	recurringRuleID uuid.NullUUID,
@@ -344,6 +352,14 @@ func applyWorkOrderNullables(
 	if unitID.Valid {
 		v := unitID.UUID
 		w.UnitID = &v
+	}
+	if vendorID.Valid {
+		v := vendorID.UUID
+		w.VendorID = &v
+	}
+	if rating.Valid {
+		v := int(rating.Int32)
+		w.Rating = &v
 	}
 	if scheduledStart.Valid {
 		w.ScheduledStart = &scheduledStart.Time

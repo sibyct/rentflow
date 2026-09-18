@@ -22,6 +22,7 @@ type RouterConfig struct {
 	LeaseService         domain.LeaseService
 	WorkOrderService     domain.WorkOrderService
 	RecurringRuleService domain.RecurringRuleService
+	VendorService        domain.VendorService
 
 	AuthHandler    *handlers.AuthHandler
 	HealthHandler  *handlers.HealthHandler
@@ -56,6 +57,7 @@ func NewRouter(cfg RouterConfig) http.Handler {
 	leaseHandler := handlers.NewLeaseHandler(cfg.LeaseService)
 	workOrderHandler := handlers.NewWorkOrderHandler(cfg.WorkOrderService)
 	maintenanceRuleHandler := handlers.NewMaintenanceRuleHandler(cfg.RecurringRuleService)
+	vendorHandler := handlers.NewVendorHandler(cfg.VendorService)
 
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Route("/auth", func(r chi.Router) {
@@ -90,6 +92,20 @@ func NewRouter(cfg RouterConfig) http.Handler {
 				// property (or unit) page the user is already on.
 				r.Post("/{propertyId}/work-orders", workOrderHandler.Create)
 				r.Post("/{propertyId}/maintenance-rules", maintenanceRuleHandler.Create)
+			})
+
+			// The Vendors directory: every vendor the caller owns,
+			// plus the category-filtered lookup the Vendor Selector
+			// (inside the work order drawer) uses.
+			r.Route("/vendors", func(r chi.Router) {
+				r.Post("/", vendorHandler.Create)
+				r.Get("/", vendorHandler.List)
+				r.Get("/by-category", vendorHandler.ListForCategory)
+				r.Get("/{id}", vendorHandler.Get)
+				r.Put("/{id}", vendorHandler.Update)
+				r.Delete("/{id}", vendorHandler.Delete)
+				r.Get("/{id}/properties", vendorHandler.GetPropertiesServed)
+				r.Get("/{id}/spend", vendorHandler.GetSpendSummary)
 			})
 
 			// The portfolio-wide Units page: every unit across every
