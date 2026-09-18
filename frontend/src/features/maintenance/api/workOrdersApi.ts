@@ -29,6 +29,9 @@ interface WorkOrderWire {
   reported_by_contact?: string;
   assigned_to?: string;
   assigned_to_contact?: string;
+  vendor_id?: string;
+  vendor_name?: string;
+  rating?: number | null;
   access_instructions?: string;
   scheduled_start?: string;
   scheduled_end?: string;
@@ -81,6 +84,9 @@ function toWorkOrderDetail(wire: WorkOrderWire): WorkOrderDetail {
     status: wire.status as WorkOrderStatus,
     isOverdue: wire.is_overdue,
     assignedTo: wire.assigned_to ?? '',
+    vendorId: wire.vendor_id ?? '',
+    vendorName: wire.vendor_name ?? '',
+    rating: wire.rating ?? null,
     dueDate: wire.due_date ?? '',
     createdAt: wire.created_at,
     description: wire.description ?? '',
@@ -133,6 +139,8 @@ export function toFormValues(detail: WorkOrderDetail): WorkOrderFormValues {
     reportedByContact: detail.reportedByContact,
     assignedTo: detail.assignedTo,
     assignedToContact: detail.assignedToContact,
+    vendorId: detail.vendorId,
+    rating: detail.rating != null ? String(detail.rating) : '',
     accessInstructions: detail.accessInstructions,
     scheduledStart: toLocalDateTimeInput(detail.scheduledStart),
     scheduledEnd: toLocalDateTimeInput(detail.scheduledEnd),
@@ -179,6 +187,8 @@ function toWorkOrderRequest(values: WorkOrderFormValues) {
     reported_by_contact: values.reportedByContact?.trim() || undefined,
     assigned_to: values.assignedTo?.trim() || undefined,
     assigned_to_contact: values.assignedToContact?.trim() || undefined,
+    vendor_id: values.vendorId || undefined,
+    rating: parseNumber(values.rating),
     access_instructions: values.accessInstructions?.trim() || undefined,
     scheduled_start: toISOOrUndefined(values.scheduledStart),
     scheduled_end: toISOOrUndefined(values.scheduledEnd),
@@ -206,6 +216,7 @@ export interface WorkOrderListParams {
   priority?: WorkOrderPriority | '';
   category?: WorkOrderCategory | '';
   assignedTo?: string;
+  vendorId?: string;
   overdue?: boolean;
   unassigned?: boolean;
   sort?: WorkOrderSortKey;
@@ -227,6 +238,7 @@ function buildListQuery(params: WorkOrderListParams): string {
   if (params.priority) q.set('priority', params.priority);
   if (params.category) q.set('category', params.category);
   if (params.assignedTo) q.set('assigned_to', params.assignedTo);
+  if (params.vendorId) q.set('vendor_id', params.vendorId);
   if (params.overdue) q.set('overdue', 'true');
   if (params.unassigned) q.set('unassigned', 'true');
   if (params.sort) q.set('sort', SORT_TO_WIRE[params.sort]);

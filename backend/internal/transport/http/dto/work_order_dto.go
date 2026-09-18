@@ -23,6 +23,7 @@ type CreateWorkOrderRequest struct {
 	ReportedByContact  string   `json:"reported_by_contact" validate:"omitempty,max=200,noctrl"`
 	AssignedTo         string   `json:"assigned_to" validate:"omitempty,max=200,noctrl"`
 	AssignedToContact  string   `json:"assigned_to_contact" validate:"omitempty,max=200,noctrl"`
+	VendorID           *string  `json:"vendor_id" validate:"omitempty,uuid4"`
 	AccessInstructions string   `json:"access_instructions" validate:"omitempty,max=1000,noctrl"`
 	ScheduledStart     string   `json:"scheduled_start" validate:"omitempty,datetime=2006-01-02T15:04:05Z07:00"`
 	ScheduledEnd       string   `json:"scheduled_end" validate:"omitempty,datetime=2006-01-02T15:04:05Z07:00"`
@@ -77,6 +78,13 @@ func (r CreateWorkOrderRequest) ToDomain(propertyID uuid.UUID) (domain.CreateWor
 		}
 		input.UnitID = &id
 	}
+	if r.VendorID != nil && *r.VendorID != "" {
+		id, err := uuid.Parse(*r.VendorID)
+		if err != nil {
+			return domain.CreateWorkOrderInput{}, fmt.Errorf("vendor_id: %w", err)
+		}
+		input.VendorID = &id
+	}
 
 	var err error
 	if input.ScheduledStart, err = parseOptionalDateTime(r.ScheduledStart); err != nil {
@@ -99,16 +107,20 @@ func (r CreateWorkOrderRequest) ToDomain(propertyID uuid.UUID) (domain.CreateWor
 // "explicit null" apart (see UpdateUnitInput's identical limitation),
 // so this uses an empty string as the "clear" sentinel instead.
 type UpdateWorkOrderRequest struct {
-	UnitID             *string  `json:"unit_id" validate:"omitempty"`
-	Title              *string  `json:"title" validate:"omitempty,min=1,max=200,noctrl"`
-	Description        *string  `json:"description" validate:"omitempty,max=4000,noctrl"`
-	Category           *string  `json:"category" validate:"omitempty,oneof=plumbing electrical hvac appliance pest_control general other"`
-	Priority           *string  `json:"priority" validate:"omitempty,oneof=low medium high emergency"`
-	Status             *string  `json:"status" validate:"omitempty,oneof=new assigned in_progress on_hold completed cancelled"`
-	ReportedBy         *string  `json:"reported_by" validate:"omitempty,max=200,noctrl"`
-	ReportedByContact  *string  `json:"reported_by_contact" validate:"omitempty,max=200,noctrl"`
-	AssignedTo         *string  `json:"assigned_to" validate:"omitempty,max=200,noctrl"`
-	AssignedToContact  *string  `json:"assigned_to_contact" validate:"omitempty,max=200,noctrl"`
+	UnitID            *string `json:"unit_id" validate:"omitempty"`
+	Title             *string `json:"title" validate:"omitempty,min=1,max=200,noctrl"`
+	Description       *string `json:"description" validate:"omitempty,max=4000,noctrl"`
+	Category          *string `json:"category" validate:"omitempty,oneof=plumbing electrical hvac appliance pest_control general other"`
+	Priority          *string `json:"priority" validate:"omitempty,oneof=low medium high emergency"`
+	Status            *string `json:"status" validate:"omitempty,oneof=new assigned in_progress on_hold completed cancelled"`
+	ReportedBy        *string `json:"reported_by" validate:"omitempty,max=200,noctrl"`
+	ReportedByContact *string `json:"reported_by_contact" validate:"omitempty,max=200,noctrl"`
+	AssignedTo        *string `json:"assigned_to" validate:"omitempty,max=200,noctrl"`
+	AssignedToContact *string `json:"assigned_to_contact" validate:"omitempty,max=200,noctrl"`
+	// VendorID uses the same empty-string-means-"clear" sentinel as
+	// UpdateWorkOrderRequest.UnitID.
+	VendorID           *string  `json:"vendor_id"`
+	Rating             *int     `json:"rating" validate:"omitempty,min=1,max=5"`
 	AccessInstructions *string  `json:"access_instructions" validate:"omitempty,max=1000,noctrl"`
 	ScheduledStart     *string  `json:"scheduled_start" validate:"omitempty,datetime=2006-01-02T15:04:05Z07:00"`
 	ScheduledEnd       *string  `json:"scheduled_end" validate:"omitempty,datetime=2006-01-02T15:04:05Z07:00"`
@@ -146,12 +158,23 @@ func (r UpdateWorkOrderRequest) ToDomain() (domain.UpdateWorkOrderInput, error) 
 		ReportedByContact:  r.ReportedByContact,
 		AssignedTo:         r.AssignedTo,
 		AssignedToContact:  r.AssignedToContact,
+		Rating:             r.Rating,
 		AccessInstructions: r.AccessInstructions,
 		EstimatedCost:      r.EstimatedCost,
 		ActualCost:         r.ActualCost,
 		PhotoLink:          r.PhotoLink,
 		InvoiceLink:        r.InvoiceLink,
 		InternalNotes:      r.InternalNotes,
+	}
+	if r.VendorID != nil {
+		input.VendorIDSet = true
+		if *r.VendorID != "" {
+			id, err := uuid.Parse(*r.VendorID)
+			if err != nil {
+				return domain.UpdateWorkOrderInput{}, fmt.Errorf("vendor_id: %w", err)
+			}
+			input.VendorID = &id
+		}
 	}
 	if r.Category != nil {
 		c := domain.WorkOrderCategory(*r.Category)
@@ -273,6 +296,8 @@ type WorkOrderResponse struct {
 	ReportedByContact  string   `json:"reported_by_contact,omitempty"`
 	AssignedTo         string   `json:"assigned_to,omitempty"`
 	AssignedToContact  string   `json:"assigned_to_contact,omitempty"`
+	VendorID           string   `json:"vendor_id,omitempty"`
+	Rating             *int     `json:"rating,omitempty"`
 	AccessInstructions string   `json:"access_instructions,omitempty"`
 	ScheduledStart     string   `json:"scheduled_start,omitempty"`
 	ScheduledEnd       string   `json:"scheduled_end,omitempty"`
@@ -302,6 +327,7 @@ func NewWorkOrderResponse(w *domain.WorkOrder) WorkOrderResponse {
 		ReportedByContact:  w.ReportedByContact,
 		AssignedTo:         w.AssignedTo,
 		AssignedToContact:  w.AssignedToContact,
+		Rating:             w.Rating,
 		AccessInstructions: w.AccessInstructions,
 		EstimatedCost:      w.EstimatedCost,
 		ActualCost:         w.ActualCost,
@@ -313,6 +339,9 @@ func NewWorkOrderResponse(w *domain.WorkOrder) WorkOrderResponse {
 	}
 	if w.UnitID != nil {
 		resp.UnitID = w.UnitID.String()
+	}
+	if w.VendorID != nil {
+		resp.VendorID = w.VendorID.String()
 	}
 	if w.ScheduledStart != nil {
 		resp.ScheduledStart = w.ScheduledStart.Format(workOrderDateTimeLayout)
@@ -339,6 +368,7 @@ type WorkOrderWithPropertyResponse struct {
 	WorkOrderResponse
 	PropertyName string `json:"property_name"`
 	UnitName     string `json:"unit_name,omitempty"`
+	VendorName   string `json:"vendor_name,omitempty"`
 }
 
 func NewWorkOrderWithPropertyResponse(w *domain.WorkOrderWithProperty) WorkOrderWithPropertyResponse {
@@ -346,6 +376,7 @@ func NewWorkOrderWithPropertyResponse(w *domain.WorkOrderWithProperty) WorkOrder
 		WorkOrderResponse: NewWorkOrderResponse(&w.WorkOrder),
 		PropertyName:      w.PropertyName,
 		UnitName:          w.UnitName,
+		VendorName:        w.VendorName,
 	}
 }
 

@@ -123,14 +123,16 @@ func run() error {
 	leaseRepo := postgres.NewLeaseRepository(pool)
 	workOrderRepo := postgres.NewWorkOrderRepository(pool)
 	maintenanceRuleRepo := postgres.NewMaintenanceRuleRepository(pool)
+	vendorRepo := postgres.NewVendorRepository(pool)
 	userRepo := postgres.NewUserRepository(pool)
 
 	// Services: injected with repositories (as domain interfaces) and the logger.
 	propertyService := service.NewPropertyService(propertyRepo, unitRepo, cache, log)
 	unitService := service.NewUnitService(unitRepo, propertyRepo, log)
 	leaseService := service.NewLeaseService(leaseRepo, unitRepo, propertyRepo, log)
-	workOrderService := service.NewWorkOrderService(workOrderRepo, unitRepo, propertyRepo, log)
+	workOrderService := service.NewWorkOrderService(workOrderRepo, unitRepo, propertyRepo, vendorRepo, log)
 	maintenanceRuleService := service.NewMaintenanceRuleService(maintenanceRuleRepo, workOrderRepo, unitRepo, propertyRepo, log)
+	vendorService := service.NewVendorService(vendorRepo, propertyRepo, log)
 	authService := service.NewAuthService(userRepo, cache, cfg.JWTAccessSecret, cfg.JWTRefreshSecret, cfg.JWTAccessTTL, cfg.JWTRefreshTTL)
 
 	// Handlers: injected with services (as domain interfaces).
@@ -147,6 +149,7 @@ func run() error {
 		LeaseService:         leaseService,
 		WorkOrderService:     workOrderService,
 		RecurringRuleService: maintenanceRuleService,
+		VendorService:        vendorService,
 		AuthHandler:          authHandler,
 		HealthHandler:        healthHandler,
 		VersionHandler:       versionHandler,
