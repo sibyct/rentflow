@@ -16,10 +16,12 @@ type RouterConfig struct {
 	Logger         *slog.Logger
 	AllowedOrigins []string
 
-	AuthService     domain.AuthService
-	PropertyService domain.PropertyService
-	UnitService     domain.UnitService
-	LeaseService    domain.LeaseService
+	AuthService          domain.AuthService
+	PropertyService      domain.PropertyService
+	UnitService          domain.UnitService
+	LeaseService         domain.LeaseService
+	WorkOrderService     domain.WorkOrderService
+	RecurringRuleService domain.RecurringRuleService
 
 	AuthHandler    *handlers.AuthHandler
 	HealthHandler  *handlers.HealthHandler
@@ -52,6 +54,8 @@ func NewRouter(cfg RouterConfig) http.Handler {
 	propertyHandler := handlers.NewPropertyHandler(cfg.PropertyService, cfg.UnitService)
 	unitHandler := handlers.NewUnitHandler(cfg.UnitService)
 	leaseHandler := handlers.NewLeaseHandler(cfg.LeaseService)
+	workOrderHandler := handlers.NewWorkOrderHandler(cfg.WorkOrderService)
+	maintenanceRuleHandler := handlers.NewMaintenanceRuleHandler(cfg.RecurringRuleService)
 
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Route("/auth", func(r chi.Router) {
@@ -80,6 +84,12 @@ func NewRouter(cfg RouterConfig) http.Handler {
 					r.Post("/bulk", unitHandler.BulkCreate)
 					r.Get("/", unitHandler.List)
 				})
+
+				// Same propertyId-from-URL rationale as units above — a
+				// work order or recurring rule is always created from the
+				// property (or unit) page the user is already on.
+				r.Post("/{propertyId}/work-orders", workOrderHandler.Create)
+				r.Post("/{propertyId}/maintenance-rules", maintenanceRuleHandler.Create)
 			})
 
 			// The portfolio-wide Units page: every unit across every
@@ -104,6 +114,29 @@ func NewRouter(cfg RouterConfig) http.Handler {
 				r.Get("/{id}", leaseHandler.Get)
 				r.Put("/{id}", leaseHandler.Update)
 				r.Delete("/{id}", leaseHandler.Delete)
+			})
+
+			// The global Maintenance page: every work order across every
+			// property the caller owns.
+			r.Route("/work-orders", func(r chi.Router) {
+				r.Get("/", workOrderHandler.List)
+				r.Get("/summary", workOrderHandler.GetSummary)
+				r.Patch("/status", workOrderHandler.BulkUpdateStatus)
+				r.Patch("/reassign", workOrderHandler.BulkReassign)
+				r.Get("/{id}", workOrderHandler.Get)
+				r.Put("/{id}", workOrderHandler.Update)
+				r.Delete("/{id}", workOrderHandler.Delete)
+				r.Get("/{id}/activity", workOrderHandler.ListActivity)
+				r.Post("/{id}/activity", workOrderHandler.AddNote)
+			})
+
+			// The Scheduled tab: every recurring maintenance rule across
+			// every property the caller owns.
+			r.Route("/maintenance-rules", func(r chi.Router) {
+				r.Get("/", maintenanceRuleHandler.List)
+				r.Put("/{id}", maintenanceRuleHandler.Update)
+				r.Delete("/{id}", maintenanceRuleHandler.Delete)
+				r.Post("/{id}/generate", maintenanceRuleHandler.GenerateNow)
 			})
 		})
 	})

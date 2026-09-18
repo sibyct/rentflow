@@ -121,12 +121,16 @@ func run() error {
 	propertyRepo := postgres.NewPropertyRepository(pool)
 	unitRepo := postgres.NewUnitRepository(pool)
 	leaseRepo := postgres.NewLeaseRepository(pool)
+	workOrderRepo := postgres.NewWorkOrderRepository(pool)
+	maintenanceRuleRepo := postgres.NewMaintenanceRuleRepository(pool)
 	userRepo := postgres.NewUserRepository(pool)
 
 	// Services: injected with repositories (as domain interfaces) and the logger.
 	propertyService := service.NewPropertyService(propertyRepo, unitRepo, cache, log)
 	unitService := service.NewUnitService(unitRepo, propertyRepo, log)
 	leaseService := service.NewLeaseService(leaseRepo, unitRepo, propertyRepo, log)
+	workOrderService := service.NewWorkOrderService(workOrderRepo, unitRepo, propertyRepo, log)
+	maintenanceRuleService := service.NewMaintenanceRuleService(maintenanceRuleRepo, workOrderRepo, unitRepo, propertyRepo, log)
 	authService := service.NewAuthService(userRepo, cache, cfg.JWTAccessSecret, cfg.JWTRefreshSecret, cfg.JWTAccessTTL, cfg.JWTRefreshTTL)
 
 	// Handlers: injected with services (as domain interfaces).
@@ -135,15 +139,17 @@ func run() error {
 	versionHandler := handlers.NewVersionHandler(Version, Commit, BuildDate)
 
 	router := transporthttp.NewRouter(transporthttp.RouterConfig{
-		Logger:          log,
-		AllowedOrigins:  cfg.AllowedOrigins,
-		AuthService:     authService,
-		PropertyService: propertyService,
-		UnitService:     unitService,
-		LeaseService:    leaseService,
-		AuthHandler:     authHandler,
-		HealthHandler:   healthHandler,
-		VersionHandler:  versionHandler,
+		Logger:               log,
+		AllowedOrigins:       cfg.AllowedOrigins,
+		AuthService:          authService,
+		PropertyService:      propertyService,
+		UnitService:          unitService,
+		LeaseService:         leaseService,
+		WorkOrderService:     workOrderService,
+		RecurringRuleService: maintenanceRuleService,
+		AuthHandler:          authHandler,
+		HealthHandler:        healthHandler,
+		VersionHandler:       versionHandler,
 	})
 
 	srv := transporthttp.NewServer(":"+cfg.HTTPPort, router)
