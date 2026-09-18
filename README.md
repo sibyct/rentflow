@@ -83,20 +83,25 @@ not five different top-level folders.
 
 ## Running locally
 
-**Everything, via Docker Compose** (Postgres + Redis + API with hot
-reload + Vite dev server):
+The frontend always runs natively (`npm run dev`) — it ships to S3 as a
+static build, not a container, so there's no frontend Docker path to
+run locally either. The backend has two options.
+
+**Backend infra + API, via Docker Compose** (Postgres + Redis +
+migrations + API with hot reload):
 
 ```bash
-cp backend/.env.example backend/.env      # values already work for docker-compose as-is
-cp frontend/.env.example frontend/.env.local
+cp .env.example .env   # repo root — read by docker-compose.yml itself
 docker compose up --build
 ```
 
 - API: http://localhost:8080 (health: `/healthz`, readiness: `/readyz`)
-- Frontend: http://localhost:5173
+- Every port (Postgres, Redis, API) binds to `127.0.0.1` only, not your
+  whole network.
 - Migrations run automatically via the one-shot `migrate` service before `api` starts.
 
-**Backend only, natively** (useful for debugging):
+**Backend only, natively** (useful for debugging — e.g. attaching a
+real debugger, or running just the API against Compose's Postgres/Redis):
 
 ```bash
 cd backend
@@ -105,7 +110,7 @@ make migrate-up        # requires the golang-migrate CLI: https://github.com/gol
 make run
 ```
 
-**Frontend only, natively**:
+**Frontend**:
 
 ```bash
 cd frontend
@@ -113,6 +118,8 @@ cp .env.example .env.local
 npm install
 npm run dev
 ```
+
+- Frontend: http://localhost:5173
 
 ## Running tests
 

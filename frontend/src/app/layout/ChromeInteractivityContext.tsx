@@ -24,6 +24,7 @@ function useChromeInteractivityContext(): ChromeInteractivityValue {
 }
 
 /** Read by TopBar/Sidebar to fade and disable the controls that need a live session. */
+// eslint-disable-next-line react-refresh/only-export-components -- colocated with its provider, the standard React context pattern
 export function useChromeDimmed(): boolean {
   return useChromeInteractivityContext().dimmed;
 }
@@ -42,6 +43,7 @@ export function useChromeDimmed(): boolean {
  * is always safe; `dim=true` outside the provider is a silent no-op
  * rather than a hard crash.
  */
+// eslint-disable-next-line react-refresh/only-export-components -- colocated with its provider, the standard React context pattern
 export function useDimChromeWhileMounted(dim: boolean): void {
   const ctx = useContext(ChromeInteractivityContext);
   useEffect(() => {

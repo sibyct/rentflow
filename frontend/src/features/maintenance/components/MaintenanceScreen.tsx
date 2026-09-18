@@ -244,7 +244,7 @@ export function MaintenanceScreen() {
                   select
                   size="small"
                   value=""
-                  displayEmpty
+                  slotProps={{ select: { displayEmpty: true } }}
                   onChange={(e) => {
                     const status = e.target.value as WorkOrderStatus;
                     bulkUpdateStatus.mutate(

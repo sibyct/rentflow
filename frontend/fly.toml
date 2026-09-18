@@ -1,0 +1,45 @@
+# PRODUCTION Fly.io app config for the frontend — deployed by the
+# deploy-frontend-production job in ../.github/workflows/cd.yml on
+# every push to main. Serves the Vite build via nginx (see Dockerfile).
+# For the staging counterpart, see fly.staging.toml.
+#
+# One-time setup, from inside frontend/:
+#   1. `fly launch --no-deploy --config fly.toml` (or
+#      `fly apps create <name>`), then fill in `app` below.
+#   2. In GitHub repo settings → Environments → production, the
+#      FLY_API_TOKEN secret is shared with the backend's production
+#      deploy (same environment, same token works across apps in the
+#      same Fly org) — nothing extra to add there.
+#
+# Both [build.args] are baked in at BUILD time (see Dockerfile) —
+# update them once you know your real domains, and again any time they
+# change; a stale value here means the deployed frontend silently keeps
+# calling the old target until the next deploy.
+#
+# VITE_API_BASE_URL is deliberately empty: the browser calls this same
+# origin (/api/...), which nginx.conf.template then proxies to
+# API_BACKEND_URL server-side. This is NOT optional — a direct
+# cross-origin call from the browser to the API's own *.fly.dev domain
+# would silently drop the httpOnly, SameSite=Strict refresh-token
+# cookie, since fly.dev is deliberately on the Public Suffix List and
+# two different *.fly.dev apps are different sites to a browser.
+
+app = "propertymanagement-web" # replace with your actual Fly app name
+primary_region = "iad"
+
+[build]
+  [build.args]
+    VITE_API_BASE_URL = ""
+    API_BACKEND_URL = "https://propertymanagement-api.fly.dev"
+
+[http_service]
+  internal_port = 80
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 256
