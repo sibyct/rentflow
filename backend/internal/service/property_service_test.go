@@ -207,7 +207,7 @@ func TestPropertyService_CreateProperty(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			repo := newFakePropertyRepository()
-			svc := service.NewPropertyService(repo, nil, noopLogger())
+			svc := service.NewPropertyService(repo, nil, nil, noopLogger())
 
 			got, err := svc.CreateProperty(context.Background(), tt.input)
 
@@ -242,9 +242,62 @@ func TestPropertyService_CreateProperty(t *testing.T) {
 	}
 }
 
+// TestPropertyService_CreateProperty_AutoCreatesImplicitUnit covers the
+// residential_single_unit special case: the property IS the unit, so
+// CreateProperty must create exactly one backing unit row rather than
+// leaving the property with none until someone visits a "Units" list
+// that isn't even shown for this property type.
+func TestPropertyService_CreateProperty_AutoCreatesImplicitUnit(t *testing.T) {
+	propertyRepo := newFakePropertyRepository()
+	unitRepo := newFakeUnitRepository()
+	svc := service.NewPropertyService(propertyRepo, unitRepo, nil, noopLogger())
+	ownerID := uuid.New()
+
+	t.Run("residential_single_unit gets one implicit unit", func(t *testing.T) {
+		in := validCreateInput(ownerID)
+		in.Type = domain.PropertyTypeResidentialSingleUnit
+		in.AddressLine1 = "1 Single Unit Ln"
+
+		p, err := svc.CreateProperty(context.Background(), in)
+		if err != nil {
+			t.Fatalf("CreateProperty() unexpected error = %v", err)
+		}
+
+		units, err := unitRepo.ListByProperty(context.Background(), p.ID)
+		if err != nil {
+			t.Fatalf("ListByProperty() unexpected error = %v", err)
+		}
+		if len(units) != 1 {
+			t.Fatalf("CreateProperty() created %d implicit units, want 1", len(units))
+		}
+		if units[0].Status != domain.UnitStatusVacant {
+			t.Errorf("implicit unit status = %q, want %q", units[0].Status, domain.UnitStatusVacant)
+		}
+	})
+
+	t.Run("residential_multi_unit gets no implicit unit", func(t *testing.T) {
+		in := validCreateInput(ownerID)
+		in.Type = domain.PropertyTypeResidentialMultiUnit
+		in.AddressLine1 = "2 Multi Unit Ln"
+
+		p, err := svc.CreateProperty(context.Background(), in)
+		if err != nil {
+			t.Fatalf("CreateProperty() unexpected error = %v", err)
+		}
+
+		units, err := unitRepo.ListByProperty(context.Background(), p.ID)
+		if err != nil {
+			t.Fatalf("ListByProperty() unexpected error = %v", err)
+		}
+		if len(units) != 0 {
+			t.Fatalf("CreateProperty() created %d implicit units for a multi-unit property, want 0", len(units))
+		}
+	})
+}
+
 func TestPropertyService_GetProperty(t *testing.T) {
 	repo := newFakePropertyRepository()
-	svc := service.NewPropertyService(repo, nil, noopLogger())
+	svc := service.NewPropertyService(repo, nil, nil, noopLogger())
 
 	ownerID := uuid.New()
 	existing := &domain.Property{
@@ -286,7 +339,7 @@ func TestPropertyService_GetProperty(t *testing.T) {
 
 func TestPropertyService_UpdateProperty(t *testing.T) {
 	repo := newFakePropertyRepository()
-	svc := service.NewPropertyService(repo, nil, noopLogger())
+	svc := service.NewPropertyService(repo, nil, nil, noopLogger())
 
 	ownerID := uuid.New()
 	existing := &domain.Property{
@@ -341,7 +394,7 @@ func TestPropertyService_UpdateProperty(t *testing.T) {
 
 func TestPropertyService_DeleteProperty(t *testing.T) {
 	repo := newFakePropertyRepository()
-	svc := service.NewPropertyService(repo, nil, noopLogger())
+	svc := service.NewPropertyService(repo, nil, nil, noopLogger())
 
 	ownerID := uuid.New()
 	existing := &domain.Property{ID: uuid.New(), Name: "Existing Place", AddressLine1: "1 Existing Way", OwnerID: ownerID}
@@ -370,7 +423,7 @@ func TestPropertyService_DeleteProperty(t *testing.T) {
 
 func TestPropertyService_ListProperties_ClampsLimit(t *testing.T) {
 	repo := newFakePropertyRepository()
-	svc := service.NewPropertyService(repo, nil, noopLogger())
+	svc := service.NewPropertyService(repo, nil, nil, noopLogger())
 	ownerID := uuid.New()
 
 	for i := 0; i < 3; i++ {
@@ -392,7 +445,7 @@ func TestPropertyService_ListProperties_ClampsLimit(t *testing.T) {
 
 func TestPropertyService_CreateProperty_AccumulatesAllValidationErrors(t *testing.T) {
 	repo := newFakePropertyRepository()
-	svc := service.NewPropertyService(repo, nil, noopLogger())
+	svc := service.NewPropertyService(repo, nil, nil, noopLogger())
 
 	_, err := svc.CreateProperty(context.Background(), domain.CreatePropertyInput{
 		Name:         "",
@@ -432,7 +485,7 @@ func TestPropertyService_CreateProperty_DuplicateAddress(t *testing.T) {
 
 	t.Run("first property at an address succeeds", func(t *testing.T) {
 		repo := newFakePropertyRepository()
-		svc := service.NewPropertyService(repo, nil, noopLogger())
+		svc := service.NewPropertyService(repo, nil, nil, noopLogger())
 
 		in := validCreateInput(ownerID)
 		in.AddressLine1 = "1 Duplicate Ave"
@@ -443,7 +496,7 @@ func TestPropertyService_CreateProperty_DuplicateAddress(t *testing.T) {
 
 	t.Run("second property at the same address for the same owner is rejected", func(t *testing.T) {
 		repo := newFakePropertyRepository()
-		svc := service.NewPropertyService(repo, nil, noopLogger())
+		svc := service.NewPropertyService(repo, nil, nil, noopLogger())
 		ctx := context.Background()
 
 		input := validCreateInput(ownerID)
@@ -464,7 +517,7 @@ func TestPropertyService_CreateProperty_DuplicateAddress(t *testing.T) {
 
 	t.Run("same address for a different owner is allowed", func(t *testing.T) {
 		repo := newFakePropertyRepository()
-		svc := service.NewPropertyService(repo, nil, noopLogger())
+		svc := service.NewPropertyService(repo, nil, nil, noopLogger())
 		ctx := context.Background()
 
 		first := validCreateInput(ownerID)
@@ -483,7 +536,7 @@ func TestPropertyService_CreateProperty_DuplicateAddress(t *testing.T) {
 
 func TestPropertyService_BulkUpdateStatus(t *testing.T) {
 	repo := newFakePropertyRepository()
-	svc := service.NewPropertyService(repo, nil, noopLogger())
+	svc := service.NewPropertyService(repo, nil, nil, noopLogger())
 	ownerID := uuid.New()
 
 	var ids []uuid.UUID

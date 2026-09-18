@@ -119,10 +119,14 @@ func run() error {
 
 	// Repositories: concrete, DB-backed, injected with the connections above.
 	propertyRepo := postgres.NewPropertyRepository(pool)
+	unitRepo := postgres.NewUnitRepository(pool)
+	leaseRepo := postgres.NewLeaseRepository(pool)
 	userRepo := postgres.NewUserRepository(pool)
 
 	// Services: injected with repositories (as domain interfaces) and the logger.
-	propertyService := service.NewPropertyService(propertyRepo, cache, log)
+	propertyService := service.NewPropertyService(propertyRepo, unitRepo, cache, log)
+	unitService := service.NewUnitService(unitRepo, propertyRepo, log)
+	leaseService := service.NewLeaseService(leaseRepo, unitRepo, propertyRepo, log)
 	authService := service.NewAuthService(userRepo, cache, cfg.JWTAccessSecret, cfg.JWTRefreshSecret, cfg.JWTAccessTTL, cfg.JWTRefreshTTL)
 
 	// Handlers: injected with services (as domain interfaces).
@@ -135,6 +139,8 @@ func run() error {
 		AllowedOrigins:  cfg.AllowedOrigins,
 		AuthService:     authService,
 		PropertyService: propertyService,
+		UnitService:     unitService,
+		LeaseService:    leaseService,
 		AuthHandler:     authHandler,
 		HealthHandler:   healthHandler,
 		VersionHandler:  versionHandler,

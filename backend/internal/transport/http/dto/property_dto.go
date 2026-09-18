@@ -208,12 +208,17 @@ type PropertyResponse struct {
 	Amenities     []string `json:"amenities"`
 	Notes         string   `json:"notes,omitempty"`
 	Status        string   `json:"status"`
-	// OccupancyPct and CollectedThisMonth mirror what the frontend's mock
-	// list shows, but there's no units/leases/payments feature yet to
-	// compute them from — hardcoded to 0 until that exists, rather than
-	// storing a number nothing keeps up to date.
+	// OccupancyPct and CollectedThisMonth are computed from the property's
+	// units (see UnitRepository.GetPropertyUnitStats) by the handler,
+	// which decorates the base response via WithUnitStats. A property
+	// with no unit rows yet (a fresh multi-unit property, or an
+	// unexpected stats-lookup failure) reports 0 rather than omitting the
+	// fields — there's still no real payments feature behind
+	// CollectedThisMonth, so it approximates current_rent owed by
+	// occupied units, not an actual receipt total.
 	OccupancyPct       int    `json:"occupancy_pct"`
 	CollectedThisMonth int    `json:"collected_this_month"`
+	UnitCount          int    `json:"unit_count"`
 	OwnerID            string `json:"owner_id"`
 	CreatedAt          string `json:"created_at"`
 	UpdatedAt          string `json:"updated_at"`
@@ -265,4 +270,19 @@ func NewPropertyListResponse(properties []*domain.Property) []PropertyResponse {
 		out[i] = NewPropertyResponse(p)
 	}
 	return out
+}
+
+// WithUnitStats decorates resp with real occupancy/rent-roll numbers.
+// Kept as a separate step from NewPropertyResponse (rather than folding
+// unit stats into the constructor) because the handler fetches stats via
+// a different service than PropertyResponse otherwise depends on — see
+// PropertyHandler.Get and .List.
+func (resp PropertyResponse) WithUnitStats(stats *domain.PropertyUnitStats) PropertyResponse {
+	if stats == nil {
+		return resp
+	}
+	resp.UnitCount = stats.UnitCount
+	resp.OccupancyPct = stats.OccupancyPct
+	resp.CollectedThisMonth = int(stats.TotalCollected)
+	return resp
 }

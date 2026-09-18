@@ -18,6 +18,8 @@ type RouterConfig struct {
 
 	AuthService     domain.AuthService
 	PropertyService domain.PropertyService
+	UnitService     domain.UnitService
+	LeaseService    domain.LeaseService
 
 	AuthHandler    *handlers.AuthHandler
 	HealthHandler  *handlers.HealthHandler
@@ -47,7 +49,9 @@ func NewRouter(cfg RouterConfig) http.Handler {
 	r.Get("/readyz", cfg.HealthHandler.Readyz)
 	r.Get("/version", cfg.VersionHandler.Version)
 
-	propertyHandler := handlers.NewPropertyHandler(cfg.PropertyService)
+	propertyHandler := handlers.NewPropertyHandler(cfg.PropertyService, cfg.UnitService)
+	unitHandler := handlers.NewUnitHandler(cfg.UnitService)
+	leaseHandler := handlers.NewLeaseHandler(cfg.LeaseService)
 
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Route("/auth", func(r chi.Router) {
@@ -67,6 +71,39 @@ func NewRouter(cfg RouterConfig) http.Handler {
 				r.Get("/{id}", propertyHandler.Get)
 				r.Put("/{id}", propertyHandler.Update)
 				r.Delete("/{id}", propertyHandler.Delete)
+
+				// propertyId is set from the URL, never a client-supplied
+				// body field: a unit is always created/listed in the
+				// context of the property page the user is already on.
+				r.Route("/{propertyId}/units", func(r chi.Router) {
+					r.Post("/", unitHandler.Create)
+					r.Post("/bulk", unitHandler.BulkCreate)
+					r.Get("/", unitHandler.List)
+				})
+			})
+
+			// The portfolio-wide Units page: every unit across every
+			// property the caller owns, distinct from the property-scoped
+			// list nested under /properties/{propertyId}/units above.
+			r.Route("/units", func(r chi.Router) {
+				r.Get("/", unitHandler.ListForOwner)
+				r.Get("/{id}", unitHandler.Get)
+				r.Put("/{id}", unitHandler.Update)
+				r.Delete("/{id}", unitHandler.Delete)
+
+				// unitId is set from the URL, same rationale as units
+				// under /properties/{propertyId}/units above — a lease
+				// is always created from the unit page it belongs to.
+				r.Post("/{id}/leases", leaseHandler.Create)
+			})
+
+			// The portfolio-wide Leases page: every lease across every
+			// property the caller owns.
+			r.Route("/leases", func(r chi.Router) {
+				r.Get("/", leaseHandler.List)
+				r.Get("/{id}", leaseHandler.Get)
+				r.Put("/{id}", leaseHandler.Update)
+				r.Delete("/{id}", leaseHandler.Delete)
 			})
 		})
 	})
