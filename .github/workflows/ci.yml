@@ -37,14 +37,22 @@ jobs:
             exit 1
           fi
 
-      - name: go vet
-        run: go vet ./...
-
+      # No separate `go vet` step: backend/.golangci.yml already enables
+      # the govet linter, so golangci-lint below covers it — a
+      # standalone `go vet ./...` here would just redo the same
+      # analysis a second time on every run.
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v6
         with:
           working-directory: backend
-          version: v1.61.0
+          # v1.61.0 (this repo's original pin) predates Go 1.25 support
+          # entirely (added in v2.4.0) — golangci-lint's own tracker has
+          # multiple "unable to use with go 1.25" reports against the
+          # v1.6x line. v1.64.8 is the last v1-config-compatible release
+          # (v2 requires migrating .golangci.yml's format, a separate,
+          # larger change), so it's the safest fix that doesn't also
+          # risk breaking config parsing.
+          version: v1.64.8
 
       - name: go test
         run: go test ./... -race -count=1

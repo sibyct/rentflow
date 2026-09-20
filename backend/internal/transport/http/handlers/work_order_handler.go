@@ -181,6 +181,26 @@ func (h *WorkOrderHandler) GetSummary(w http.ResponseWriter, r *http.Request) {
 	response.JSON(w, http.StatusOK, dto.NewWorkOrderSummaryResponse(summary))
 }
 
+// GetRecentActivity backs the Dashboard's activity feed — the most
+// recent maintenance activity across every work order this owner has.
+func (h *WorkOrderHandler) GetRecentActivity(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.ClaimsFromContext(r.Context())
+	if !ok {
+		response.WriteError(w, r, fmt.Errorf("list recent activity: %w", domain.ErrUnauthorized))
+		return
+	}
+
+	limit, offset := parsePagination(r)
+
+	activity, err := h.svc.ListRecentActivity(r.Context(), claims.UserID, limit, offset)
+	if err != nil {
+		response.WriteError(w, r, err)
+		return
+	}
+
+	response.JSON(w, http.StatusOK, dto.NewMaintenanceActivityWithContextListResponse(activity))
+}
+
 func (h *WorkOrderHandler) BulkUpdateStatus(w http.ResponseWriter, r *http.Request) {
 	claims, ok := middleware.ClaimsFromContext(r.Context())
 	if !ok {

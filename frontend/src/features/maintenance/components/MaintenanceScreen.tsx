@@ -49,7 +49,11 @@ export function MaintenanceScreen() {
   const [search, setSearch] = useState('');
   const [propertyFilter, setPropertyFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState<WorkOrderStatus | ''>('');
-  const [priorityFilter, setPriorityFilter] = useState<WorkOrderPriority | ''>('');
+  // Seeded once from ?priority=emergency — the Dashboard's maintenance
+  // priority chips land here with.
+  const [priorityFilter, setPriorityFilter] = useState<WorkOrderPriority | ''>(
+    (searchParams.get('priority') as WorkOrderPriority | null) ?? '',
+  );
   const [categoryFilter, setCategoryFilter] = useState<WorkOrderCategory | ''>('');
   const [activeCounter, setActiveCounter] = useState<CounterKey | null>(null);
   const [sortKey, setSortKey] = useState<WorkOrderSortKey | undefined>(undefined);

@@ -103,11 +103,20 @@ export interface MaintenanceActivityEntry {
   createdAt: string;
 }
 
+/** MaintenanceActivityEntry decorated with its work order/property — for the Dashboard's portfolio-wide activity feed, where (unlike the per-work-order activity panel) the work order isn't already known from the page. */
+export interface MaintenanceActivityWithContext extends MaintenanceActivityEntry {
+  workOrderTitle: string;
+  propertyName: string;
+}
+
 export interface WorkOrderSummary {
   open: number;
   overdue: number;
   unassigned: number;
   emergency: number;
+  high: number;
+  medium: number;
+  low: number;
 }
 
 export type RecurringRuleFrequencyUnit = 'days' | 'weeks' | 'months';

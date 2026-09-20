@@ -151,6 +151,7 @@ type UnitResponse struct {
 	RentDueDay      *int     `json:"rent_due_day,omitempty"`
 	TenantName      string   `json:"tenant_name,omitempty"`
 	Notes           string   `json:"notes,omitempty"`
+	VacatedAt       string   `json:"vacated_at,omitempty"`
 	CreatedAt       string   `json:"created_at"`
 	UpdatedAt       string   `json:"updated_at"`
 }
@@ -177,6 +178,9 @@ func NewUnitResponse(u *domain.Unit) UnitResponse {
 	}
 	if u.Furnished != nil {
 		resp.Furnished = string(*u.Furnished)
+	}
+	if u.VacatedAt != nil {
+		resp.VacatedAt = u.VacatedAt.Format(time.RFC3339)
 	}
 	return resp
 }

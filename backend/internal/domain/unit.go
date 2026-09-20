@@ -91,8 +91,15 @@ type Unit struct {
 	RentDueDay      *int
 	TenantName      string
 	Notes           string
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	// VacatedAt is when this unit most recently became vacant — nil
+	// means it isn't currently vacant, or became vacant before this
+	// field existed. Stamped by UnitService whenever Status transitions
+	// to/from UnitStatusVacant (see UpdateUnit), not derived from
+	// leases: a unit's Status is a manually-set field, independent of
+	// whether it has an active lease.
+	VacatedAt *time.Time
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 type CreateUnitInput struct {

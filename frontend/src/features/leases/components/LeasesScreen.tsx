@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
@@ -29,10 +29,15 @@ import { LeasesToolbar } from './LeasesToolbar';
  */
 export function LeasesScreen() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
   const [search, setSearch] = useState('');
   const [propertyFilter, setPropertyFilter] = useState('');
-  const [statusFilter, setStatusFilter] = useState<LeaseDisplayStatus | ''>('');
+  // Seeded once from ?status=expiring_soon — the Dashboard's "Leases
+  // Expiring Soon" View all link lands here with.
+  const [statusFilter, setStatusFilter] = useState<LeaseDisplayStatus | ''>(
+    (searchParams.get('status') as LeaseDisplayStatus | null) ?? '',
+  );
   const [sortKey, setSortKey] = useState<LeasePortfolioSortKey>('startDate');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [page, setPage] = useState(0);

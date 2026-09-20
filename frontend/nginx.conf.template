@@ -24,9 +24,26 @@ server {
     # ${API_BACKEND_URL} is substituted at Docker build time (see
     # Dockerfile) from [build.args] in fly.toml / fly.staging.toml —
     # scheme + host only, no trailing slash (e.g. https://propertymanagement-api.fly.dev).
+    #
+    # proxy_pass here takes NO trailing URI (just the bare variable) —
+    # this is deliberate, not an omission. nginx only does its normal
+    # "replace the matched location prefix" rewrite when proxy_pass's
+    # target is a static, literal value; once it's built from a
+    # variable (required above for request-time DNS resolution), that
+    # rewrite is skipped and nginx instead appends the client's
+    # untouched original request URI after whatever comes after the
+    # variable. Appending an extra "/api/" here (as an earlier version
+    # of this file did) does NOT re-add the stripped prefix back — it
+    # replaces the entire forwarded path with a literal "/api/" for
+    # every request, regardless of what was actually requested
+    # (verified directly: every request arrived at the backend as
+    # exactly "/api/", never the real path). Since backend routes are
+    # already mounted at /api/v1 (see router.go), forwarding the
+    # original URI completely unchanged is exactly what's wanted here
+    # anyway — no rewriting needed at all.
     location /api/ {
         set $backend "${API_BACKEND_URL}";
-        proxy_pass $backend/api/;
+        proxy_pass $backend;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;

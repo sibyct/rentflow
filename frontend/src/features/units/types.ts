@@ -52,6 +52,8 @@ export interface UnitRow {
   marketRent: number | null;
   currentRent: number | null;
   tenantName: string;
+  /** When this unit most recently became vacant — empty when it isn't currently vacant, or became vacant before this field existed. */
+  vacatedAt: string;
 }
 
 /** Full record for the unit detail/edit views — everything UnitRow has, plus every field the Add/Edit Unit form collects. */

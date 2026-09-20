@@ -9,6 +9,7 @@ export const workOrdersQueryKeys = {
   detail: (id: string) => [...workOrdersQueryKeys.all, 'detail', id] as const,
   summary: () => [...workOrdersQueryKeys.all, 'summary'] as const,
   activity: (id: string) => [...workOrdersQueryKeys.all, 'activity', id] as const,
+  recentActivity: (limit: number, offset: number) => [...workOrdersQueryKeys.all, 'recent-activity', limit, offset] as const,
 };
 
 export function useWorkOrders(params: WorkOrderListParams) {
@@ -39,6 +40,14 @@ export function useWorkOrderActivity(workOrderId: string | undefined) {
     queryKey: workOrdersQueryKeys.activity(workOrderId ?? ''),
     queryFn: () => workOrdersApi.listActivity(workOrderId!),
     enabled: Boolean(workOrderId),
+  });
+}
+
+export function useRecentWorkOrderActivity(limit: number, offset: number) {
+  return useQuery({
+    queryKey: workOrdersQueryKeys.recentActivity(limit, offset),
+    queryFn: () => workOrdersApi.getRecentActivity(limit, offset),
+    placeholderData: (previousData) => previousData,
   });
 }
 
