@@ -22,6 +22,7 @@ interface UnitWire {
   rent_due_day?: number | null;
   tenant_name?: string;
   notes?: string;
+  vacated_at?: string;
   created_at: string;
   updated_at: string;
 }
@@ -44,6 +45,7 @@ function toUnitDetail(wire: UnitWire): UnitDetail {
     rentDueDay: wire.rent_due_day ?? null,
     tenantName: wire.tenant_name ?? '',
     notes: wire.notes ?? '',
+    vacatedAt: wire.vacated_at ?? '',
     createdAt: wire.created_at,
     updatedAt: wire.updated_at,
   };

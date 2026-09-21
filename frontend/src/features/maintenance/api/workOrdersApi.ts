@@ -1,6 +1,7 @@
 import { apiClient } from '@/api/client';
 import type {
   MaintenanceActivityEntry,
+  MaintenanceActivityWithContext,
   MaintenanceVisibility,
   WorkOrderCategory,
   WorkOrderDetail,
@@ -69,6 +70,14 @@ interface WorkOrderSummaryWire {
   overdue: number;
   unassigned: number;
   emergency: number;
+  high: number;
+  medium: number;
+  low: number;
+}
+
+interface MaintenanceActivityWithContextWire extends MaintenanceActivityWire {
+  work_order_title: string;
+  property_name: string;
 }
 
 function toWorkOrderDetail(wire: WorkOrderWire): WorkOrderDetail {
@@ -123,6 +132,14 @@ function toMaintenanceActivity(wire: MaintenanceActivityWire): MaintenanceActivi
     oldValue: wire.old_value ?? '',
     newValue: wire.new_value ?? '',
     createdAt: wire.created_at,
+  };
+}
+
+function toMaintenanceActivityWithContext(wire: MaintenanceActivityWithContextWire): MaintenanceActivityWithContext {
+  return {
+    ...toMaintenanceActivity(wire),
+    workOrderTitle: wire.work_order_title,
+    propertyName: wire.property_name,
   };
 }
 
@@ -263,6 +280,9 @@ export const workOrdersApi = {
       overdue: s.overdue,
       unassigned: s.unassigned,
       emergency: s.emergency,
+      high: s.high,
+      medium: s.medium,
+      low: s.low,
     })),
 
   /** propertyId comes from context (the property/unit page the flow was opened from), never a form field. */
@@ -278,6 +298,12 @@ export const workOrdersApi = {
 
   listActivity: (workOrderId: string): Promise<MaintenanceActivityEntry[]> =>
     apiClient.get<MaintenanceActivityWire[]>(`/api/v1/work-orders/${workOrderId}/activity`).then((rows) => rows.map(toMaintenanceActivity)),
+
+  /** Backs the Dashboard's activity feed — the most recent activity across every work order the caller owns, not scoped to one. */
+  getRecentActivity: (limit: number, offset: number): Promise<MaintenanceActivityWithContext[]> =>
+    apiClient
+      .get<MaintenanceActivityWithContextWire[]>(`/api/v1/work-orders/activity?limit=${limit}&offset=${offset}`)
+      .then((rows) => rows.map(toMaintenanceActivityWithContext)),
 
   addNote: (workOrderId: string, message: string, visibility: MaintenanceVisibility): Promise<MaintenanceActivityEntry> =>
     apiClient

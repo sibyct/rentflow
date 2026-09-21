@@ -1,9 +1,7 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { AppShell } from './layout/AppShell';
 import { AuthLayout } from './layout/AuthLayout';
-// ProtectedRoute import intentionally left out while the guard below is
-// disabled — see the commented-out <ProtectedRoute> wrapping AppShell.
-// Restore this import if/when that's re-enabled.
+import { ProtectedRoute } from './layout/ProtectedRoute';
 import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
@@ -30,12 +28,16 @@ export function AppRouter() {
       </Route>
 
       {/* Authenticated app: one ProtectedRoute guarding the whole shell,
-          rather than repeating it on every route. */}
+          rather than repeating it on every route. Also what redirects
+          to /login the moment a session expires mid-use — client.ts's
+          requestEnvelope calls useAuthStore.clear() when a 401's
+          refresh attempt fails, flipping isAuthenticated to false,
+          which this re-renders on and redirects from immediately. */}
       <Route
         element={
-          // <ProtectedRoute>
+          <ProtectedRoute>
             <AppShell />
-          // </ProtectedRoute>
+          </ProtectedRoute>
         }
       >
         <Route index element={<Navigate to="/dashboard" replace />} />

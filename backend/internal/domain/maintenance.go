@@ -242,12 +242,18 @@ type WorkOrderWithProperty struct {
 	VendorName   string // empty when WorkOrder.VendorID is nil
 }
 
-// WorkOrderSummary backs the list page's clickable summary counters.
+// WorkOrderSummary backs the list page's clickable summary counters,
+// and the Dashboard's maintenance priority breakdown (Low/Medium/High
+// duplicate Emergency's count-by-priority shape rather than needing a
+// second query).
 type WorkOrderSummary struct {
 	Open       int
 	Overdue    int
 	Unassigned int
 	Emergency  int
+	High       int
+	Medium     int
+	Low        int
 }
 
 type MaintenanceActivityKind string
@@ -287,6 +293,17 @@ type MaintenanceActivity struct {
 	CreatedAt   time.Time
 }
 
+// MaintenanceActivityWithContext decorates a MaintenanceActivity with
+// its work order's title and property name — needed for a
+// portfolio-wide feed (see WorkOrderRepository.ListRecentActivityForOwner)
+// where, unlike the per-work-order activity panel, the work order
+// itself isn't already known from the page the caller is on.
+type MaintenanceActivityWithContext struct {
+	MaintenanceActivity
+	WorkOrderTitle string
+	PropertyName   string
+}
+
 // WorkOrderRepository is the port implemented by internal/repository/postgres.
 type WorkOrderRepository interface {
 	Create(ctx context.Context, w *WorkOrder) error
@@ -302,6 +319,11 @@ type WorkOrderRepository interface {
 	GetSummary(ctx context.Context, ownerID uuid.UUID) (*WorkOrderSummary, error)
 	ListActivity(ctx context.Context, workOrderID uuid.UUID) ([]*MaintenanceActivity, error)
 	AddActivity(ctx context.Context, a *MaintenanceActivity) error
+	// ListRecentActivityForOwner backs the Dashboard's activity feed —
+	// the most recent activity across every work order this owner has,
+	// not scoped to one. Enforces p.owner_id = ownerID in the query
+	// itself, same row-security pattern as ListForOwner.
+	ListRecentActivityForOwner(ctx context.Context, ownerID uuid.UUID, limit, offset int) ([]*MaintenanceActivityWithContext, error)
 }
 
 // WorkOrderService is the port implemented by internal/service and
@@ -319,6 +341,7 @@ type WorkOrderService interface {
 	BulkReassign(ctx context.Context, ownerID uuid.UUID, ids []uuid.UUID, assignedTo string) (int, error)
 	ListActivity(ctx context.Context, workOrderID, ownerID uuid.UUID) ([]*MaintenanceActivity, error)
 	AddNote(ctx context.Context, workOrderID, ownerID uuid.UUID, message string, visibility MaintenanceVisibility) (*MaintenanceActivity, error)
+	ListRecentActivity(ctx context.Context, ownerID uuid.UUID, limit, offset int) ([]*MaintenanceActivityWithContext, error)
 }
 
 type RecurringRuleFrequencyUnit string

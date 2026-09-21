@@ -221,6 +221,16 @@ func (s *UnitService) UpdateUnit(ctx context.Context, id, ownerID uuid.UUID, inp
 		if !input.Status.Valid() {
 			verrs = append(verrs, &domain.ValidationError{Field: "status", Message: fmt.Sprintf("unknown status %q", *input.Status)})
 		} else {
+			// Stamp/clear VacatedAt on the actual transition, not every
+			// update that happens to repeat the current status — a
+			// no-op "still vacant" update shouldn't reset the days-vacant
+			// clock back to zero.
+			if *input.Status == domain.UnitStatusVacant && u.Status != domain.UnitStatusVacant {
+				now := time.Now().UTC()
+				u.VacatedAt = &now
+			} else if *input.Status != domain.UnitStatusVacant {
+				u.VacatedAt = nil
+			}
 			u.Status = *input.Status
 		}
 	}
@@ -309,7 +319,7 @@ func (s *UnitService) requireOwnedProperty(ctx context.Context, propertyID, owne
 
 func newUnitFromInput(input domain.CreateUnitInput) *domain.Unit {
 	now := time.Now().UTC()
-	return &domain.Unit{
+	u := &domain.Unit{
 		ID:              uuid.New(),
 		PropertyID:      input.PropertyID,
 		UnitName:        input.UnitName,
@@ -329,6 +339,10 @@ func newUnitFromInput(input domain.CreateUnitInput) *domain.Unit {
 		CreatedAt:       now,
 		UpdatedAt:       now,
 	}
+	if u.Status == domain.UnitStatusVacant {
+		u.VacatedAt = &now
+	}
+	return u
 }
 
 func validateUnit(

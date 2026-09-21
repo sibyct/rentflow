@@ -22,3 +22,10 @@ frontend/*.tsbuildinfo
 .idea/
 .DS_Store
 Thumbs.db
+
+# Claude Code — kept local only, not shared via the repo.
+CLAUDE.md
+.claude/
+
+# Local dev credentials — real (if weak) passwords, never committed.
+LOCAL_DEV_CREDENTIALS.md

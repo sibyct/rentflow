@@ -369,6 +369,21 @@ func (s *WorkOrderService) ListActivity(ctx context.Context, workOrderID, ownerI
 	return activity, nil
 }
 
+func (s *WorkOrderService) ListRecentActivity(ctx context.Context, ownerID uuid.UUID, limit, offset int) ([]*domain.MaintenanceActivityWithContext, error) {
+	if limit <= 0 || limit > 50 {
+		limit = 20
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	activity, err := s.repo.ListRecentActivityForOwner(ctx, ownerID, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("list recent activity for owner %s: %w", ownerID, err)
+	}
+	return activity, nil
+}
+
 func (s *WorkOrderService) AddNote(ctx context.Context, workOrderID, ownerID uuid.UUID, message string, visibility domain.MaintenanceVisibility) (*domain.MaintenanceActivity, error) {
 	w, err := s.repo.GetByID(ctx, workOrderID)
 	if err != nil {

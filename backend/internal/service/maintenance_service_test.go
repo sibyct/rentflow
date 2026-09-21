@@ -3,6 +3,7 @@ package service_test
 import (
 	"context"
 	"errors"
+	"sort"
 	"testing"
 	"time"
 
@@ -100,6 +101,15 @@ func (f *fakeWorkOrderRepository) GetSummary(_ context.Context, _ uuid.UUID) (*d
 		if w.Priority == domain.WorkOrderPriorityEmergency && w.Status.IsOpen() {
 			s.Emergency++
 		}
+		if w.Priority == domain.WorkOrderPriorityHigh && w.Status.IsOpen() {
+			s.High++
+		}
+		if w.Priority == domain.WorkOrderPriorityMedium && w.Status.IsOpen() {
+			s.Medium++
+		}
+		if w.Priority == domain.WorkOrderPriorityLow && w.Status.IsOpen() {
+			s.Low++
+		}
 	}
 	return s, nil
 }
@@ -111,6 +121,29 @@ func (f *fakeWorkOrderRepository) ListActivity(_ context.Context, workOrderID uu
 func (f *fakeWorkOrderRepository) AddActivity(_ context.Context, a *domain.MaintenanceActivity) error {
 	f.activity[a.WorkOrderID] = append(f.activity[a.WorkOrderID], a)
 	return nil
+}
+
+func (f *fakeWorkOrderRepository) ListRecentActivityForOwner(_ context.Context, _ uuid.UUID, limit, offset int) ([]*domain.MaintenanceActivityWithContext, error) {
+	all := make([]*domain.MaintenanceActivityWithContext, 0)
+	for workOrderID, entries := range f.activity {
+		title := ""
+		if w, ok := f.orders[workOrderID]; ok {
+			title = w.Title
+		}
+		for _, a := range entries {
+			all = append(all, &domain.MaintenanceActivityWithContext{MaintenanceActivity: *a, WorkOrderTitle: title})
+		}
+	}
+	sort.Slice(all, func(i, j int) bool { return all[i].CreatedAt.After(all[j].CreatedAt) })
+
+	if offset >= len(all) {
+		return []*domain.MaintenanceActivityWithContext{}, nil
+	}
+	end := offset + limit
+	if end > len(all) {
+		end = len(all)
+	}
+	return all[offset:end], nil
 }
 
 // fakeRecurringRuleRepository is an in-memory stand-in for domain.RecurringRuleRepository.

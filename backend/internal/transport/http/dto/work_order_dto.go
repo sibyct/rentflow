@@ -399,10 +399,16 @@ type WorkOrderSummaryResponse struct {
 	Overdue    int `json:"overdue"`
 	Unassigned int `json:"unassigned"`
 	Emergency  int `json:"emergency"`
+	High       int `json:"high"`
+	Medium     int `json:"medium"`
+	Low        int `json:"low"`
 }
 
 func NewWorkOrderSummaryResponse(s *domain.WorkOrderSummary) WorkOrderSummaryResponse {
-	return WorkOrderSummaryResponse{Open: s.Open, Overdue: s.Overdue, Unassigned: s.Unassigned, Emergency: s.Emergency}
+	return WorkOrderSummaryResponse{
+		Open: s.Open, Overdue: s.Overdue, Unassigned: s.Unassigned, Emergency: s.Emergency,
+		High: s.High, Medium: s.Medium, Low: s.Low,
+	}
 }
 
 type MaintenanceActivityResponse struct {
@@ -438,6 +444,33 @@ func NewMaintenanceActivityListResponse(activity []*domain.MaintenanceActivity) 
 	out := make([]MaintenanceActivityResponse, len(activity))
 	for i, a := range activity {
 		out[i] = NewMaintenanceActivityResponse(a)
+	}
+	return out
+}
+
+// MaintenanceActivityWithContextResponse is MaintenanceActivityResponse
+// plus the work order/property context a portfolio-wide feed needs
+// (see WorkOrderService.ListRecentActivity) that the per-work-order
+// activity panel doesn't, since that page already knows which work
+// order it's looking at.
+type MaintenanceActivityWithContextResponse struct {
+	MaintenanceActivityResponse
+	WorkOrderTitle string `json:"work_order_title"`
+	PropertyName   string `json:"property_name"`
+}
+
+func NewMaintenanceActivityWithContextResponse(a *domain.MaintenanceActivityWithContext) MaintenanceActivityWithContextResponse {
+	return MaintenanceActivityWithContextResponse{
+		MaintenanceActivityResponse: NewMaintenanceActivityResponse(&a.MaintenanceActivity),
+		WorkOrderTitle:              a.WorkOrderTitle,
+		PropertyName:                a.PropertyName,
+	}
+}
+
+func NewMaintenanceActivityWithContextListResponse(activity []*domain.MaintenanceActivityWithContext) []MaintenanceActivityWithContextResponse {
+	out := make([]MaintenanceActivityWithContextResponse, len(activity))
+	for i, a := range activity {
+		out[i] = NewMaintenanceActivityWithContextResponse(a)
 	}
 	return out
 }

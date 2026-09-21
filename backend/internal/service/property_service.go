@@ -106,6 +106,7 @@ func (s *PropertyService) CreateProperty(ctx context.Context, input domain.Creat
 			UnitName:   "Unit 1",
 			Type:       domain.UnitTypeOther,
 			Status:     domain.UnitStatusVacant,
+			VacatedAt:  &now,
 			CreatedAt:  now,
 			UpdatedAt:  now,
 		}

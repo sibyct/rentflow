@@ -251,13 +251,16 @@ func (r *WorkOrderRepository) GetSummary(ctx context.Context, ownerID uuid.UUID)
 			COUNT(*) FILTER (WHERE w.status NOT IN ('completed', 'cancelled')) AS open_count,
 			COUNT(*) FILTER (WHERE ` + isOverdueSQL + `) AS overdue_count,
 			COUNT(*) FILTER (WHERE w.assigned_to = '' AND w.status NOT IN ('completed', 'cancelled')) AS unassigned_count,
-			COUNT(*) FILTER (WHERE w.priority = 'emergency' AND w.status NOT IN ('completed', 'cancelled')) AS emergency_count
+			COUNT(*) FILTER (WHERE w.priority = 'emergency' AND w.status NOT IN ('completed', 'cancelled')) AS emergency_count,
+			COUNT(*) FILTER (WHERE w.priority = 'high' AND w.status NOT IN ('completed', 'cancelled')) AS high_count,
+			COUNT(*) FILTER (WHERE w.priority = 'medium' AND w.status NOT IN ('completed', 'cancelled')) AS medium_count,
+			COUNT(*) FILTER (WHERE w.priority = 'low' AND w.status NOT IN ('completed', 'cancelled')) AS low_count
 		FROM work_orders w
 		JOIN properties p ON p.id = w.property_id
 		WHERE p.owner_id = $1`
 
 	s := &domain.WorkOrderSummary{}
-	if err := r.pool.QueryRow(ctx, q, ownerID).Scan(&s.Open, &s.Overdue, &s.Unassigned, &s.Emergency); err != nil {
+	if err := r.pool.QueryRow(ctx, q, ownerID).Scan(&s.Open, &s.Overdue, &s.Unassigned, &s.Emergency, &s.High, &s.Medium, &s.Low); err != nil {
 		return nil, fmt.Errorf("get work order summary for owner %s: %w", ownerID, err)
 	}
 	return s, nil
@@ -284,6 +287,37 @@ func (r *WorkOrderRepository) ListActivity(ctx context.Context, workOrderID uuid
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate maintenance activity rows: %w", err)
+	}
+	return activity, nil
+}
+
+func (r *WorkOrderRepository) ListRecentActivityForOwner(ctx context.Context, ownerID uuid.UUID, limit, offset int) ([]*domain.MaintenanceActivityWithContext, error) {
+	const q = `
+		SELECT ma.id, ma.work_order_id, ma.kind, ma.visibility, ma.message, ma.old_value, ma.new_value, ma.created_at,
+			w.title, p.name
+		FROM maintenance_activity ma
+		JOIN work_orders w ON w.id = ma.work_order_id
+		JOIN properties p ON p.id = w.property_id
+		WHERE p.owner_id = $1
+		ORDER BY ma.created_at DESC, ma.id DESC
+		LIMIT $2 OFFSET $3`
+
+	rows, err := r.pool.Query(ctx, q, ownerID, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("list recent activity for owner %s: %w", ownerID, err)
+	}
+	defer rows.Close()
+
+	activity := make([]*domain.MaintenanceActivityWithContext, 0)
+	for rows.Next() {
+		a, err := scanMaintenanceActivityWithContext(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan recent activity row: %w", err)
+		}
+		activity = append(activity, a)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate recent activity rows: %w", err)
 	}
 	return activity, nil
 }
@@ -392,6 +426,25 @@ func scanMaintenanceActivity(row rowScanner) (*domain.MaintenanceActivity, error
 	var oldValue, newValue sql.NullString
 
 	if err := row.Scan(&a.ID, &a.WorkOrderID, &a.Kind, &a.Visibility, &a.Message, &oldValue, &newValue, &a.CreatedAt); err != nil {
+		return nil, err
+	}
+	if oldValue.Valid {
+		a.OldValue = &oldValue.String
+	}
+	if newValue.Valid {
+		a.NewValue = &newValue.String
+	}
+	return &a, nil
+}
+
+func scanMaintenanceActivityWithContext(row rowScanner) (*domain.MaintenanceActivityWithContext, error) {
+	var a domain.MaintenanceActivityWithContext
+	var oldValue, newValue sql.NullString
+
+	if err := row.Scan(
+		&a.ID, &a.WorkOrderID, &a.Kind, &a.Visibility, &a.Message, &oldValue, &newValue, &a.CreatedAt,
+		&a.WorkOrderTitle, &a.PropertyName,
+	); err != nil {
 		return nil, err
 	}
 	if oldValue.Valid {

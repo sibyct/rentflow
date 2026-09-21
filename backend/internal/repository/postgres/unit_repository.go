@@ -27,7 +27,7 @@ var _ domain.UnitRepository = (*UnitRepository)(nil)
 const unitColumns = `
 	id, property_id, unit_name, floor, unit_type, bedrooms, bathrooms, sqft, furnished,
 	status, market_rent, current_rent, security_deposit, rent_due_day, tenant_name, notes,
-	created_at, updated_at`
+	vacated_at, created_at, updated_at`
 
 // unitColumnsForRead is unitColumns aliased to "u." with current_rent
 // replaced by the *effective* current rent: the unit's active lease's
@@ -42,7 +42,7 @@ const unitColumns = `
 const unitColumnsForRead = `
 	u.id, u.property_id, u.unit_name, u.floor, u.unit_type, u.bedrooms, u.bathrooms, u.sqft, u.furnished,
 	u.status, u.market_rent, COALESCE(l.monthly_rent, u.current_rent) AS current_rent, u.security_deposit,
-	u.rent_due_day, u.tenant_name, u.notes, u.created_at, u.updated_at`
+	u.rent_due_day, u.tenant_name, u.notes, u.vacated_at, u.created_at, u.updated_at`
 
 // activeLeaseJoin is the LEFT JOIN every read query pairs with
 // unitColumnsForRead. LEFT (not INNER) so a unit with no lease at all
@@ -54,12 +54,12 @@ const activeLeaseJoin = `LEFT JOIN leases l ON l.unit_id = u.id AND l.status = '
 func (r *UnitRepository) Create(ctx context.Context, u *domain.Unit) error {
 	const q = `
 		INSERT INTO units (` + unitColumns + `)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)`
 
 	_, err := r.pool.Exec(ctx, q,
 		u.ID, u.PropertyID, u.UnitName, u.Floor, u.Type, u.Bedrooms, u.Bathrooms, u.Sqft, furnishedArg(u.Furnished),
 		u.Status, u.MarketRent, u.CurrentRent, u.SecurityDeposit, u.RentDueDay, u.TenantName, u.Notes,
-		u.CreatedAt, u.UpdatedAt,
+		u.VacatedAt, u.CreatedAt, u.UpdatedAt,
 	)
 	if err != nil {
 		return fmt.Errorf("insert unit %s: %w", u.ID, err)
@@ -84,13 +84,13 @@ func (r *UnitRepository) CreateMany(ctx context.Context, units []*domain.Unit) e
 
 	const q = `
 		INSERT INTO units (` + unitColumns + `)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)`
 
 	for _, u := range units {
 		if _, err := tx.Exec(ctx, q,
 			u.ID, u.PropertyID, u.UnitName, u.Floor, u.Type, u.Bedrooms, u.Bathrooms, u.Sqft, furnishedArg(u.Furnished),
 			u.Status, u.MarketRent, u.CurrentRent, u.SecurityDeposit, u.RentDueDay, u.TenantName, u.Notes,
-			u.CreatedAt, u.UpdatedAt,
+			u.VacatedAt, u.CreatedAt, u.UpdatedAt,
 		); err != nil {
 			return fmt.Errorf("insert unit %s in bulk batch: %w", u.ID, err)
 		}
@@ -146,7 +146,7 @@ func (r *UnitRepository) ListByProperty(ctx context.Context, propertyID uuid.UUI
 const qualifiedUnitColumns = `
 	u.id, u.property_id, u.unit_name, u.floor, u.unit_type, u.bedrooms, u.bathrooms, u.sqft, u.furnished,
 	u.status, u.market_rent, COALESCE(l.monthly_rent, u.current_rent) AS current_rent, u.security_deposit,
-	u.rent_due_day, u.tenant_name, u.notes, u.created_at, u.updated_at`
+	u.rent_due_day, u.tenant_name, u.notes, u.vacated_at, u.created_at, u.updated_at`
 
 // unitSortColumns allow-lists ListForOwner's sortable columns — never
 // interpolate a client-supplied string directly into an ORDER BY clause
@@ -239,12 +239,12 @@ func (r *UnitRepository) Update(ctx context.Context, u *domain.Unit) error {
 		UPDATE units
 		SET unit_name = $2, floor = $3, unit_type = $4, bedrooms = $5, bathrooms = $6, sqft = $7,
 			furnished = $8, status = $9, market_rent = $10, current_rent = $11, security_deposit = $12,
-			rent_due_day = $13, tenant_name = $14, notes = $15, updated_at = $16
+			rent_due_day = $13, tenant_name = $14, notes = $15, vacated_at = $16, updated_at = $17
 		WHERE id = $1`
 
 	tag, err := r.pool.Exec(ctx, q,
 		u.ID, u.UnitName, u.Floor, u.Type, u.Bedrooms, u.Bathrooms, u.Sqft, furnishedArg(u.Furnished),
-		u.Status, u.MarketRent, u.CurrentRent, u.SecurityDeposit, u.RentDueDay, u.TenantName, u.Notes, u.UpdatedAt,
+		u.Status, u.MarketRent, u.CurrentRent, u.SecurityDeposit, u.RentDueDay, u.TenantName, u.Notes, u.VacatedAt, u.UpdatedAt,
 	)
 	if err != nil {
 		return fmt.Errorf("update unit %s: %w", u.ID, err)
@@ -349,11 +349,12 @@ func scanUnit(row rowScanner) (*domain.Unit, error) {
 	var currentRent sql.NullFloat64
 	var securityDeposit sql.NullFloat64
 	var rentDueDay sql.NullInt32
+	var vacatedAt sql.NullTime
 
 	err := row.Scan(
 		&u.ID, &u.PropertyID, &u.UnitName, &floor, &u.Type, &bedrooms, &bathrooms, &sqft, &furnished,
 		&u.Status, &marketRent, &currentRent, &securityDeposit, &rentDueDay, &u.TenantName, &u.Notes,
-		&u.CreatedAt, &u.UpdatedAt,
+		&vacatedAt, &u.CreatedAt, &u.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err
@@ -393,6 +394,10 @@ func scanUnit(row rowScanner) (*domain.Unit, error) {
 	if rentDueDay.Valid {
 		v := int(rentDueDay.Int32)
 		u.RentDueDay = &v
+	}
+	if vacatedAt.Valid {
+		v := vacatedAt.Time
+		u.VacatedAt = &v
 	}
 
 	return &u, nil
@@ -414,11 +419,12 @@ func scanUnitWithProperty(row rowScanner) (*domain.UnitWithProperty, error) {
 	var currentRent sql.NullFloat64
 	var securityDeposit sql.NullFloat64
 	var rentDueDay sql.NullInt32
+	var vacatedAt sql.NullTime
 
 	err := row.Scan(
 		&u.ID, &u.PropertyID, &u.UnitName, &floor, &u.Type, &bedrooms, &bathrooms, &sqft, &furnished,
 		&u.Status, &marketRent, &currentRent, &securityDeposit, &rentDueDay, &u.TenantName, &u.Notes,
-		&u.CreatedAt, &u.UpdatedAt, &u.PropertyName,
+		&vacatedAt, &u.CreatedAt, &u.UpdatedAt, &u.PropertyName,
 	)
 	if err != nil {
 		return nil, err
@@ -458,6 +464,10 @@ func scanUnitWithProperty(row rowScanner) (*domain.UnitWithProperty, error) {
 	if rentDueDay.Valid {
 		v := int(rentDueDay.Int32)
 		u.RentDueDay = &v
+	}
+	if vacatedAt.Valid {
+		v := vacatedAt.Time
+		u.VacatedAt = &v
 	}
 
 	return &u, nil

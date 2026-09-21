@@ -137,6 +137,7 @@ func NewRouter(cfg RouterConfig) http.Handler {
 			r.Route("/work-orders", func(r chi.Router) {
 				r.Get("/", workOrderHandler.List)
 				r.Get("/summary", workOrderHandler.GetSummary)
+				r.Get("/activity", workOrderHandler.GetRecentActivity)
 				r.Patch("/status", workOrderHandler.BulkUpdateStatus)
 				r.Patch("/reassign", workOrderHandler.BulkReassign)
 				r.Get("/{id}", workOrderHandler.Get)

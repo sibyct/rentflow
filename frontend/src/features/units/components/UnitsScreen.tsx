@@ -36,7 +36,9 @@ export function UnitsScreen() {
   // Seeded once from ?property=<id> — the deep-link UnitsSection's "View
   // in Units →" link lands here with.
   const [propertyFilter, setPropertyFilter] = useState(searchParams.get('property') ?? '');
-  const [statusFilter, setStatusFilter] = useState<UnitStatus | ''>('');
+  // Seeded once from ?status=vacant — the Dashboard's Vacant Units "View
+  // all" link lands here with.
+  const [statusFilter, setStatusFilter] = useState<UnitStatus | ''>((searchParams.get('status') as UnitStatus | null) ?? '');
   const [typeFilter, setTypeFilter] = useState<UnitType | ''>('');
   const [sortKey, setSortKey] = useState<UnitPortfolioSortKey>('propertyName');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
