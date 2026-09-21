@@ -45,14 +45,16 @@ jobs:
         uses: golangci/golangci-lint-action@v6
         with:
           working-directory: backend
-          # v1.61.0 (this repo's original pin) predates Go 1.25 support
-          # entirely (added in v2.4.0) — golangci-lint's own tracker has
-          # multiple "unable to use with go 1.25" reports against the
-          # v1.6x line. v1.64.8 is the last v1-config-compatible release
-          # (v2 requires migrating .golangci.yml's format, a separate,
-          # larger change), so it's the safest fix that doesn't also
-          # risk breaking config parsing.
+          # v1.64.8 is the last v1-config-compatible release (v2 requires
+          # migrating .golangci.yml's format, a separate, larger change).
+          # But its prebuilt release binary was compiled with Go 1.24, and
+          # golangci-lint refuses to run when the Go it was built with is
+          # older than go.mod's target ("the Go language version (go1.24)
+          # used to build golangci-lint is lower than the targeted Go
+          # version (1.25.11)"). goinstall builds it from source with the
+          # runner's Go (set up above from go.mod), which sidesteps that.
           version: v1.64.8
+          install-mode: goinstall
 
       - name: go test
         run: go test ./... -race -count=1
