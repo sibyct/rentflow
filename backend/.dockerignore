@@ -1,0 +1,13 @@
+# Never send local secrets into the build context — config.Load() gets
+# real values from docker-compose/Fly env vars at runtime, not from a
+# .env file baked into the image (see cmd/api/main.go's godotenv.Load()
+# comment). Without this, `COPY . .` in Dockerfile/Dockerfile.dev would
+# ship .env straight into the image layers.
+.env
+.env.*
+
+# VCS metadata and build artifacts — not needed in the image.
+.git
+tmp/
+bin/
+*.test

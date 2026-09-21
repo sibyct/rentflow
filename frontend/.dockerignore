@@ -1,0 +1,14 @@
+# Never send local secrets into the build context — VITE_* values come
+# from real build args/CI env vars, not a .env.local file baked into
+# the image. Without this, `COPY . .` in Dockerfile/Dockerfile.dev
+# would ship .env.local straight into the image layers.
+.env
+.env.*
+
+# Reinstalled fresh inside the image — sending the host's copies just
+# wastes build-context transfer time.
+node_modules
+dist
+
+.git
+*.tsbuildinfo

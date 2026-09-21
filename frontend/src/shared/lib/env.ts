@@ -11,7 +11,12 @@ interface AppEnv {
 function readEnv(): AppEnv {
   const apiBaseUrl = import.meta.env.VITE_API_BASE_URL;
 
-  if (!apiBaseUrl) {
+  // Distinguish "never set" (undefined — genuinely forgotten) from
+  // "deliberately empty" (same-origin requests, e.g. behind the nginx
+  // reverse proxy in frontend/nginx.conf.template, which forwards /api/
+  // to the backend so the browser only ever talks to one origin). A
+  // plain falsy check would wrongly reject the second, valid case.
+  if (apiBaseUrl === undefined) {
     throw new Error(
       'VITE_API_BASE_URL is not set. Copy .env.example to .env.local and set it.',
     );

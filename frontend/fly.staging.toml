@@ -1,0 +1,29 @@
+# STAGING Fly.io app config for the frontend — deployed by the
+# deploy-frontend-staging job in ../.github/workflows/cd.yml on every
+# push to dev. See fly.toml (production) for the full setup
+# walkthrough; this mirrors it against a second, separate Fly app
+# pointed at the staging API.
+
+app = "propertymanagement-web-staging" # replace with your actual Fly app name
+primary_region = "iad"
+
+# See fly.toml's comment: VITE_API_BASE_URL stays empty so the browser
+# calls this same origin, which nginx.conf.template proxies to
+# API_BACKEND_URL server-side — required for the refresh-token cookie
+# to survive across these two separate *.fly.dev apps.
+[build]
+  [build.args]
+    VITE_API_BASE_URL = ""
+    API_BACKEND_URL = "https://propertymanagement-api-staging.fly.dev"
+
+[http_service]
+  internal_port = 80
+  force_https = true
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 0
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 256
