@@ -20,8 +20,8 @@ interface VendorWire {
   insurance_status: string;
   license_number?: string;
   license_expiry?: string;
-  coi_link?: string;
-  tax_doc_link?: string;
+  coi_attachment_id?: string;
+  tax_doc_attachment_id?: string;
   rate_type?: string;
   rate_amount?: number | null;
   payment_terms?: string;
@@ -59,8 +59,8 @@ function toVendorRow(wire: VendorWire): VendorRow {
     insuranceStatus: wire.insurance_status as InsuranceStatus,
     licenseNumber: wire.license_number ?? '',
     licenseExpiry: wire.license_expiry ?? '',
-    coiLink: wire.coi_link ?? '',
-    taxDocLink: wire.tax_doc_link ?? '',
+    coiAttachmentId: wire.coi_attachment_id ?? '',
+    taxDocAttachmentId: wire.tax_doc_attachment_id ?? '',
     rateType: (wire.rate_type as VendorRateType) ?? '',
     rateAmount: wire.rate_amount ?? null,
     paymentTerms: (wire.payment_terms as VendorPaymentTerms) ?? '',
@@ -88,8 +88,8 @@ export function toFormValues(detail: VendorDetail, propertiesServed: string[]): 
     insuranceExpiry: detail.insuranceExpiry,
     licenseNumber: detail.licenseNumber,
     licenseExpiry: detail.licenseExpiry,
-    coiLink: detail.coiLink,
-    taxDocLink: detail.taxDocLink,
+    coiAttachmentId: detail.coiAttachmentId,
+    taxDocAttachmentId: detail.taxDocAttachmentId,
     rateType: detail.rateType,
     rateAmount: detail.rateAmount != null ? String(detail.rateAmount) : '',
     paymentTerms: detail.paymentTerms,
@@ -117,8 +117,11 @@ function toVendorRequest(values: VendorFormValues) {
     insurance_expiry: values.insuranceExpiry || undefined,
     license_number: values.licenseNumber?.trim() || undefined,
     license_expiry: values.licenseExpiry || undefined,
-    coi_link: values.coiLink?.trim() || undefined,
-    tax_doc_link: values.taxDocLink?.trim() || undefined,
+    // Always sent, even when empty — see workOrdersApi.ts's
+    // toWorkOrderRequest for why (same empty-means-"clear" update
+    // contract as UpdateVendorRequest.COIAttachmentID).
+    coi_attachment_id: values.coiAttachmentId?.trim() ?? '',
+    tax_doc_attachment_id: values.taxDocAttachmentId?.trim() ?? '',
     rate_type: values.rateType || undefined,
     rate_amount: parseNumber(values.rateAmount),
     payment_terms: values.paymentTerms || undefined,

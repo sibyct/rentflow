@@ -30,6 +30,7 @@ import { useProperties } from '@/features/properties/hooks/usePropertiesQueries'
 import { useWorkOrders } from '@/features/maintenance/hooks/useWorkOrdersQueries';
 import { WORK_ORDER_PRIORITY_LABELS, WORK_ORDER_STATUS_LABELS } from '@/features/maintenance/types';
 import { ERROR_STATE_PRESETS, ErrorState, LoadingSpinner } from '@/shared/components';
+import { attachmentsApi } from '@/shared/lib/attachmentsApi';
 import { useDeleteVendor, useVendor, useVendorSpendSummary } from '../hooks/useVendorsQueries';
 import { INSURANCE_STATUS_LABELS, VENDOR_PAYMENT_TERMS_LABELS, VENDOR_RATE_TYPE_LABELS, WORK_ORDER_CATEGORY_LABELS, type InsuranceStatus, type VendorDetail } from '../types';
 import { VendorFormDialog } from './VendorFormDialog';
@@ -217,8 +218,8 @@ function OverviewTab({ vendor }: { vendor: VendorDetail }) {
               <Field label="Insurance expiry" value={formatDate(vendor.insuranceExpiry)} />
               <Field label="License number" value={vendor.licenseNumber} />
               <Field label="License expiry" value={formatDate(vendor.licenseExpiry)} />
-              <Field label="COI link" value={vendor.coiLink} link />
-              <Field label="Tax document link" value={vendor.taxDocLink} link />
+              <AttachmentField label="Certificate of insurance" attachmentId={vendor.coiAttachmentId} />
+              <AttachmentField label="Tax document" attachmentId={vendor.taxDocAttachmentId} />
             </Box>
           </Box>
 
@@ -380,19 +381,42 @@ function StatTile({ label, value, secondary }: { label: string; value: string; s
   );
 }
 
-function Field({ label, value, link }: { label: string; value: string; link?: boolean }) {
+function AttachmentField({ label, attachmentId }: { label: string; attachmentId: string }) {
+  const [error, setError] = useState<string | null>(null);
+
+  async function view() {
+    try {
+      const { url } = await attachmentsApi.getUrl(attachmentId);
+      window.open(url, '_blank', 'noopener,noreferrer');
+    } catch {
+      setError('Could not open the file.');
+    }
+  }
+
   return (
     <Box>
       <Typography sx={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.04em', color: tokens.slate[500], textTransform: 'uppercase' }}>
         {label}
       </Typography>
-      {link && value ? (
-        <Link href={value} target="_blank" rel="noopener noreferrer" sx={{ fontSize: 13.5, mt: 0.25, display: 'block' }}>
-          {value}
+      {attachmentId ? (
+        <Link component="button" type="button" onClick={() => void view()} sx={{ fontSize: 13.5, mt: 0.25, display: 'block' }}>
+          View file
         </Link>
       ) : (
-        <Typography sx={{ fontSize: 13.5, color: value ? tokens.slate[700] : tokens.slate[400], mt: 0.25 }}>{value || '—'}</Typography>
+        <Typography sx={{ fontSize: 13.5, color: tokens.slate[400], mt: 0.25 }}>—</Typography>
       )}
+      {error && <Typography sx={{ fontSize: 11.5, color: tokens.error, mt: 0.25 }}>{error}</Typography>}
+    </Box>
+  );
+}
+
+function Field({ label, value }: { label: string; value: string }) {
+  return (
+    <Box>
+      <Typography sx={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.04em', color: tokens.slate[500], textTransform: 'uppercase' }}>
+        {label}
+      </Typography>
+      <Typography sx={{ fontSize: 13.5, color: value ? tokens.slate[700] : tokens.slate[400], mt: 0.25 }}>{value || '—'}</Typography>
     </Box>
   );
 }

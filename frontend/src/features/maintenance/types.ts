@@ -79,10 +79,9 @@ export interface WorkOrderDetail extends WorkOrderRow {
   scheduledEnd: string;
   estimatedCost: number | null;
   actualCost: number | null;
-  /** Freeform URL, not a real upload — see backend migration comment. */
-  photoLink: string;
-  /** Freeform URL, not a real upload. */
-  invoiceLink: string;
+  /** Attachment id, or '' for none — uploaded via shared/components/FileUpload. */
+  photoAttachmentId: string;
+  invoiceAttachmentId: string;
   internalNotes: string;
   recurringRuleId: string;
   completedAt: string;

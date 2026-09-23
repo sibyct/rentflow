@@ -24,8 +24,8 @@ export const workOrderSchema = z
     dueDate: z.string().trim().optional(),
     estimatedCost: z.string().trim().optional(),
     actualCost: z.string().trim().optional(),
-    photoLink: z.string().trim().optional(),
-    invoiceLink: z.string().trim().optional(),
+    photoAttachmentId: z.string().trim().optional(),
+    invoiceAttachmentId: z.string().trim().optional(),
     internalNotes: z.string().trim().optional(),
   })
   .refine((data) => data.priority !== 'emergency' || Boolean(data.dueDate), {
@@ -55,8 +55,8 @@ export function workOrderDefaultValues(): WorkOrderFormValues {
     dueDate: '',
     estimatedCost: '',
     actualCost: '',
-    photoLink: '',
-    invoiceLink: '',
+    photoAttachmentId: '',
+    invoiceAttachmentId: '',
     internalNotes: '',
   };
 }

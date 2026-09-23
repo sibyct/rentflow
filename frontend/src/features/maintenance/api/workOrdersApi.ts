@@ -39,8 +39,8 @@ interface WorkOrderWire {
   due_date?: string;
   estimated_cost?: number | null;
   actual_cost?: number | null;
-  photo_link?: string;
-  invoice_link?: string;
+  photo_attachment_id?: string;
+  invoice_attachment_id?: string;
   internal_notes?: string;
   recurring_rule_id?: string;
   completed_at?: string;
@@ -107,8 +107,8 @@ function toWorkOrderDetail(wire: WorkOrderWire): WorkOrderDetail {
     scheduledEnd: wire.scheduled_end ?? '',
     estimatedCost: wire.estimated_cost ?? null,
     actualCost: wire.actual_cost ?? null,
-    photoLink: wire.photo_link ?? '',
-    invoiceLink: wire.invoice_link ?? '',
+    photoAttachmentId: wire.photo_attachment_id ?? '',
+    invoiceAttachmentId: wire.invoice_attachment_id ?? '',
     internalNotes: wire.internal_notes ?? '',
     recurringRuleId: wire.recurring_rule_id ?? '',
     completedAt: wire.completed_at ?? '',
@@ -164,8 +164,8 @@ export function toFormValues(detail: WorkOrderDetail): WorkOrderFormValues {
     dueDate: detail.dueDate,
     estimatedCost: detail.estimatedCost != null ? String(detail.estimatedCost) : '',
     actualCost: detail.actualCost != null ? String(detail.actualCost) : '',
-    photoLink: detail.photoLink,
-    invoiceLink: detail.invoiceLink,
+    photoAttachmentId: detail.photoAttachmentId,
+    invoiceAttachmentId: detail.invoiceAttachmentId,
     internalNotes: detail.internalNotes,
   };
 }
@@ -212,8 +212,13 @@ function toWorkOrderRequest(values: WorkOrderFormValues) {
     due_date: values.dueDate || undefined,
     estimated_cost: parseNumber(values.estimatedCost),
     actual_cost: parseNumber(values.actualCost),
-    photo_link: values.photoLink?.trim() || undefined,
-    invoice_link: values.invoiceLink?.trim() || undefined,
+    // Always sent, even when empty: the backend's update contract reads
+    // an empty string as "clear it" and a missing field as "leave
+    // unchanged" (see UpdateWorkOrderRequest.PhotoAttachmentID) — since
+    // this form is always fully populated from the current record (see
+    // toFormValues), there's never a "leave unchanged" case to omit for.
+    photo_attachment_id: values.photoAttachmentId?.trim() ?? '',
+    invoice_attachment_id: values.invoiceAttachmentId?.trim() ?? '',
     internal_notes: values.internalNotes?.trim() || undefined,
   };
 }
