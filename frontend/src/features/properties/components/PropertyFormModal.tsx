@@ -16,6 +16,7 @@ import type { TransitionProps } from '@mui/material/transitions';
 import Stack from '@mui/material/Stack';
 import Step from '@mui/material/Step';
 import StepButton from '@mui/material/StepButton';
+import StepLabel from '@mui/material/StepLabel';
 import Stepper from '@mui/material/Stepper';
 import Typography from '@mui/material/Typography';
 import ArchiveOutlined from '@mui/icons-material/ArchiveOutlined';
@@ -364,6 +365,32 @@ export function PropertyFormModal({ open, onClose, propertyId, onSaved, onArchiv
           </Stack>
         </Stack>
         <Divider />
+
+        {/* The overall create flow — Property Details, then (once
+            saved) Add Units — is two steps at this level; Basic
+            Info/Details/Amenities/Notes below are sub-sections within
+            step 1, not steps of their own. Edit mode skips this: there's
+            no "add units next" arc when the record already exists. */}
+        {!isEditMode && !isWaitingForRecord && (
+          <Box sx={{ px: 3, pt: 2, pb: phase === 'form' ? 0 : 2, bgcolor: tokens.slate[50] }}>
+            <Stepper activeStep={phase === 'form' ? 0 : 1} sx={{ maxWidth: 420, mx: 'auto' }}>
+              <Step>
+                <StepLabel>Property Details</StepLabel>
+              </Step>
+              <Step disabled={phase === 'form'}>
+                <StepLabel
+                  optional={
+                    phase === 'form' ? (
+                      <Typography sx={{ fontSize: 11, color: tokens.slate[400] }}>Coming next</Typography>
+                    ) : undefined
+                  }
+                >
+                  Add Units
+                </StepLabel>
+              </Step>
+            </Stepper>
+          </Box>
+        )}
 
         {phase === 'form' && !isWaitingForRecord && (
           <Box sx={{ px: 3, py: 2.5, borderBottom: `1px solid ${tokens.slate[100]}` }}>

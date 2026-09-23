@@ -17,7 +17,7 @@ const RANGE_OPTIONS = ['This month', 'Last month', 'This quarter', 'This year'];
 // makes this generic one directly redundant, not just visually similar.
 // Add a pattern here for any future page in the same situation (e.g. a
 // unit or lease detail page) rather than special-casing AppShell/routing.
-const OWN_HEADER_ROUTE_PATTERNS = [/^\/properties\/[^/]+$/, /^\/leases\/[^/]+$/];
+const OWN_HEADER_ROUTE_PATTERNS = [/^\/properties\/[^/]+$/, /^\/leases\/[^/]+$/, /^\/settings\/.+$/];
 
 /**
  * Breadcrumb + H1 are entirely data-driven from navConfig — they update

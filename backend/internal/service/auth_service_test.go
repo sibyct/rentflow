@@ -50,6 +50,13 @@ func (f *fakeUserRepository) GetByID(_ context.Context, id uuid.UUID) (*domain.U
 	return u, nil
 }
 
+func (f *fakeUserRepository) TouchLastLogin(_ context.Context, id uuid.UUID, at time.Time) error {
+	if u, ok := f.byID[id]; ok {
+		u.LastLoginAt = &at
+	}
+	return nil
+}
+
 // fakeCache is an in-memory stand-in for domain.Cache.
 type fakeCache struct {
 	values map[string]string

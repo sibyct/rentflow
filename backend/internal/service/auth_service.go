@@ -15,9 +15,16 @@ import (
 
 // authClaims is the JWT-library-specific claims shape. It stays private
 // to the service package; callers only ever see domain.AuthClaims.
+//
+// UserID is the ACCOUNT id (see domain.AuthClaims's doc comment) —
+// always the signed-in user's own id for a root account, and always the
+// root's id for staff, so every existing ownership check elsewhere in
+// the codebase keeps working unchanged now that staff logins exist.
 type authClaims struct {
-	UserID uuid.UUID       `json:"user_id"`
-	Role   domain.UserRole `json:"role"`
+	UserID    uuid.UUID         `json:"user_id"`
+	Role      domain.UserRole   `json:"role"`
+	ActorID   uuid.UUID         `json:"actor_id"`
+	StaffRole *domain.StaffRole `json:"staff_role,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -74,8 +81,12 @@ func (s *AuthService) Register(ctx context.Context, email, password string) (*do
 		Email:        email,
 		PasswordHash: string(hash),
 		Role:         domain.UserRoleManager,
-		CreatedAt:    now,
-		UpdatedAt:    now,
+		// A self-registered user is always a root account (AccountOwnerID
+		// stays nil — see domain.User.AccountID) and always active: there
+		// is no invite step in this path.
+		Status:    domain.StaffStatusActive,
+		CreatedAt: now,
+		UpdatedAt: now,
 	}
 
 	if err := s.users.Create(ctx, u); err != nil {
@@ -94,9 +105,22 @@ func (s *AuthService) Login(ctx context.Context, email, password string) (string
 		return "", "", nil, fmt.Errorf("login %s: %w", email, err)
 	}
 
+	if u.Status == domain.StaffStatusDeactivated {
+		return "", "", nil, fmt.Errorf("login %s: account deactivated: %w", email, domain.ErrUnauthorized)
+	}
+	if u.Status == domain.StaffStatusInvited {
+		// No usable password has been set yet — accepting the invite is
+		// what sets one (see StaffService.AcceptInvite).
+		return "", "", nil, fmt.Errorf("login %s: invite not yet accepted: %w", email, domain.ErrUnauthorized)
+	}
+
 	if err := bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(password)); err != nil {
 		return "", "", nil, fmt.Errorf("login %s: wrong password: %w", email, domain.ErrUnauthorized)
 	}
+
+	loginAt := time.Now().UTC()
+	_ = s.users.TouchLastLogin(ctx, u.ID, loginAt) // best-effort — never fails a login
+	u.LastLoginAt = &loginAt
 
 	access, refresh, err := s.issueTokenPair(u)
 	if err != nil {
@@ -118,12 +142,18 @@ func (s *AuthService) RefreshToken(ctx context.Context, refreshToken string) (st
 		}
 	}
 
-	u, err := s.users.GetByID(ctx, claims.UserID)
+	// By ActorID, not UserID (the account id) — for a staff login those
+	// differ, and it's the staff member's own row whose current status
+	// (still active? still the role it was issued with?) needs rechecking.
+	u, err := s.users.GetByID(ctx, claims.ActorID)
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
-			return "", "", nil, fmt.Errorf("refresh token: user %s: %w", claims.UserID, domain.ErrUnauthorized)
+			return "", "", nil, fmt.Errorf("refresh token: user %s: %w", claims.ActorID, domain.ErrUnauthorized)
 		}
 		return "", "", nil, fmt.Errorf("refresh token: %w", err)
+	}
+	if u.Status != domain.StaffStatusActive {
+		return "", "", nil, fmt.Errorf("refresh token: user %s: not active: %w", claims.ActorID, domain.ErrUnauthorized)
 	}
 
 	// Rotate: the presented refresh token is single-use.
@@ -151,15 +181,18 @@ func (s *AuthService) ValidateAccessToken(_ context.Context, tokenString string)
 	if err != nil {
 		return nil, fmt.Errorf("validate access token: %w: %w", domain.ErrUnauthorized, err)
 	}
-	return &domain.AuthClaims{UserID: claims.UserID, Role: claims.Role}, nil
+	return &domain.AuthClaims{UserID: claims.UserID, Role: claims.Role, ActorID: claims.ActorID, StaffRole: claims.StaffRole}, nil
 }
 
 func (s *AuthService) issueTokenPair(u *domain.User) (string, string, error) {
 	now := time.Now().UTC()
+	accountID := u.AccountID()
 
 	access := authClaims{
-		UserID: u.ID,
-		Role:   u.Role,
+		UserID:    accountID,
+		Role:      u.Role,
+		ActorID:   u.ID,
+		StaffRole: u.StaffRole,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ID:        uuid.NewString(),
 			Subject:   u.ID.String(),
@@ -173,8 +206,10 @@ func (s *AuthService) issueTokenPair(u *domain.User) (string, string, error) {
 	}
 
 	refresh := authClaims{
-		UserID: u.ID,
-		Role:   u.Role,
+		UserID:    accountID,
+		Role:      u.Role,
+		ActorID:   u.ID,
+		StaffRole: u.StaffRole,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ID:        uuid.NewString(),
 			Subject:   u.ID.String(),

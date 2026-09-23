@@ -170,10 +170,12 @@ func run() error {
 	depositService := service.NewDepositService(postgres.NewDepositRepository(pool), ledgerRepo, log)
 	propertyOwnerRepo := postgres.NewPropertyOwnerRepository(pool)
 	propertyOwnerService := service.NewPropertyOwnerService(propertyOwnerRepo, propertyRepo, log)
+	outboxRepo := postgres.NewEmailOutboxRepository(pool)
 	statementService := service.NewOwnerStatementService(
 		postgres.NewOwnerStatementRepository(pool), propertyOwnerRepo, propertyRepo,
-		postgres.NewEmailOutboxRepository(pool), pdf.NewStatementRenderer(), cfg.MailEnabled(), cfg.PublicAppURL, log,
+		outboxRepo, pdf.NewStatementRenderer(), cfg.MailEnabled(), cfg.PublicAppURL, log,
 	)
+	staffService := service.NewStaffService(postgres.NewStaffRepository(pool), propertyRepo, outboxRepo, cfg.MailEnabled(), cfg.PublicAppURL, log)
 	// A completed work order produces its expense, and a lease with a
 	// security deposit gets a tracked deposit record, through these hooks.
 	workOrderService.SetExpenseSyncer(expenseService)
@@ -203,6 +205,7 @@ func run() error {
 		DepositService:       depositService,
 		PropertyOwnerService: propertyOwnerService,
 		StatementService:     statementService,
+		StaffService:         staffService,
 		AuthHandler:          authHandler,
 		HealthHandler:        healthHandler,
 		VersionHandler:       versionHandler,
