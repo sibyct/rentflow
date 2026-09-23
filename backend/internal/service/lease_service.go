@@ -20,6 +20,9 @@ type LeaseService struct {
 	unitRepo     domain.UnitRepository
 	propertyRepo domain.PropertyRepository
 	log          *slog.Logger
+	// deposits is optional (nil in tests): when set, a lease's security
+	// deposit gets a tracked record. See SetDepositEnsurer.
+	deposits domain.DepositEnsurer
 }
 
 func NewLeaseService(repo domain.LeaseRepository, unitRepo domain.UnitRepository, propertyRepo domain.PropertyRepository, log *slog.Logger) *LeaseService {
@@ -28,8 +31,25 @@ func NewLeaseService(repo domain.LeaseRepository, unitRepo domain.UnitRepository
 
 var _ domain.LeaseService = (*LeaseService)(nil)
 
+// SetDepositEnsurer wires the deposit-tracking hook after construction (a
+// setter, like WorkOrderService.SetExpenseSyncer, because the accounting
+// services are built after and share these repositories).
+func (s *LeaseService) SetDepositEnsurer(e domain.DepositEnsurer) { s.deposits = e }
+
+// ensureDeposit is best-effort: the lease write has already succeeded, so
+// a failure is logged and the deposits list's lazy backfill covers it.
+func (s *LeaseService) ensureDeposit(ctx context.Context, ownerID uuid.UUID, l *domain.Lease, propertyID uuid.UUID) {
+	if s.deposits == nil {
+		return
+	}
+	if err := s.deposits.EnsureForLease(ctx, ownerID, l, propertyID); err != nil {
+		s.log.WarnContext(ctx, "failed to ensure lease deposit", slog.String("lease_id", l.ID.String()), slog.Any("error", err))
+	}
+}
+
 func (s *LeaseService) CreateLease(ctx context.Context, ownerID uuid.UUID, input domain.CreateLeaseInput) (*domain.Lease, error) {
-	if _, err := s.requireOwnedUnit(ctx, input.UnitID, ownerID); err != nil {
+	unit, err := s.requireOwnedUnit(ctx, input.UnitID, ownerID)
+	if err != nil {
 		return nil, fmt.Errorf("create lease: %w", err)
 	}
 
@@ -83,6 +103,7 @@ func (s *LeaseService) CreateLease(ctx context.Context, ownerID uuid.UUID, input
 	if err := s.repo.Create(ctx, l); err != nil {
 		return nil, fmt.Errorf("create lease: %w", err)
 	}
+	s.ensureDeposit(ctx, ownerID, l, unit.PropertyID)
 	return l, nil
 }
 
@@ -127,7 +148,8 @@ func (s *LeaseService) UpdateLease(ctx context.Context, id, ownerID uuid.UUID, i
 	if err != nil {
 		return nil, fmt.Errorf("update lease %s: %w", id, err)
 	}
-	if _, err := s.requireOwnedUnit(ctx, l.UnitID, ownerID); err != nil {
+	unit, err := s.requireOwnedUnit(ctx, l.UnitID, ownerID)
+	if err != nil {
 		return nil, fmt.Errorf("update lease %s: %w", id, err)
 	}
 
@@ -254,6 +276,9 @@ func (s *LeaseService) UpdateLease(ctx context.Context, id, ownerID uuid.UUID, i
 	if err := s.repo.Update(ctx, l); err != nil {
 		return nil, fmt.Errorf("update lease %s: %w", id, err)
 	}
+	// A changed security_deposit amount flows to its tracked record while
+	// that deposit is still open.
+	s.ensureDeposit(ctx, ownerID, l, unit.PropertyID)
 	return l, nil
 }
 

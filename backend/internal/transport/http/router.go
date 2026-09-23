@@ -23,6 +23,15 @@ type RouterConfig struct {
 	WorkOrderService     domain.WorkOrderService
 	RecurringRuleService domain.RecurringRuleService
 	VendorService        domain.VendorService
+	LedgerService        domain.LedgerService
+	RentRollService      domain.RentRollService
+	ExpenseService       domain.ExpenseService
+	ChargeService        domain.ChargeService
+	AttachmentService    domain.AttachmentService
+	BankAccountService   domain.BankAccountService
+	DepositService       domain.DepositService
+	PropertyOwnerService domain.PropertyOwnerService
+	StatementService     domain.OwnerStatementService
 
 	AuthHandler    *handlers.AuthHandler
 	HealthHandler  *handlers.HealthHandler
@@ -58,6 +67,14 @@ func NewRouter(cfg RouterConfig) http.Handler {
 	workOrderHandler := handlers.NewWorkOrderHandler(cfg.WorkOrderService)
 	maintenanceRuleHandler := handlers.NewMaintenanceRuleHandler(cfg.RecurringRuleService)
 	vendorHandler := handlers.NewVendorHandler(cfg.VendorService)
+	accountingHandler := handlers.NewAccountingHandler(cfg.LedgerService, cfg.RentRollService)
+	expenseHandler := handlers.NewExpenseHandler(cfg.ExpenseService)
+	chargeHandler := handlers.NewChargeHandler(cfg.ChargeService)
+	attachmentHandler := handlers.NewAttachmentHandler(cfg.AttachmentService)
+	bankAccountHandler := handlers.NewBankAccountHandler(cfg.BankAccountService)
+	depositHandler := handlers.NewDepositHandler(cfg.DepositService)
+	propertyOwnerHandler := handlers.NewPropertyOwnerHandler(cfg.PropertyOwnerService)
+	statementHandler := handlers.NewOwnerStatementHandler(cfg.StatementService)
 
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Route("/auth", func(r chi.Router) {
@@ -154,6 +171,74 @@ func NewRouter(cfg RouterConfig) http.Handler {
 				r.Put("/{id}", maintenanceRuleHandler.Update)
 				r.Delete("/{id}", maintenanceRuleHandler.Delete)
 				r.Post("/{id}/generate", maintenanceRuleHandler.GenerateNow)
+			})
+
+			// Direct-to-storage file uploads: presign → browser POSTs the
+			// file to the bucket → confirm. Bytes never transit the API.
+			r.Route("/attachments", func(r chi.Router) {
+				r.Post("/presign", attachmentHandler.Presign)
+				r.Post("/{id}/confirm", attachmentHandler.Confirm)
+				r.Get("/{id}/url", attachmentHandler.DownloadURL)
+			})
+
+			// Accounting: one ledger (transactions + payments) with Rent
+			// Roll, Expenses and Charges as views over it.
+			r.Route("/accounting", func(r chi.Router) {
+				r.Get("/dashboard", accountingHandler.Dashboard)
+				r.Get("/settings", accountingHandler.GetSettings)
+				r.Put("/settings", accountingHandler.UpdateSettings)
+
+				r.Get("/rent-roll", accountingHandler.ListRentRoll)
+				r.Post("/rent-roll/generate", accountingHandler.GenerateRent)
+				r.Post("/rent-roll/leases/{leaseId}/payments", accountingHandler.RecordLeasePayment)
+
+				r.Get("/expenses", expenseHandler.List)
+				r.Post("/expenses", expenseHandler.Create)
+				r.Get("/expenses/{id}", expenseHandler.Get)
+				r.Put("/expenses/{id}", expenseHandler.Update)
+
+				r.Get("/charges", chargeHandler.List)
+				r.Post("/charges", chargeHandler.Create)
+
+				r.Get("/transactions/{id}/payments", accountingHandler.ListPayments)
+				r.Post("/transactions/{id}/payments", accountingHandler.RecordPayment)
+				r.Post("/transactions/{id}/void", accountingHandler.VoidTransaction)
+				r.Get("/transactions/{id}/audit", accountingHandler.TransactionAudit)
+				r.Post("/payments/{id}/void", accountingHandler.VoidPayment)
+
+				// Bank accounts and their reconciliation against manually
+				// entered / imported statement lines.
+				r.Get("/accounts", bankAccountHandler.List)
+				r.Post("/accounts", bankAccountHandler.Create)
+				r.Put("/accounts/{id}", bankAccountHandler.Update)
+				r.Delete("/accounts/{id}", bankAccountHandler.Delete)
+				r.Get("/accounts/{id}/reconciliation", bankAccountHandler.Reconciliation)
+				r.Get("/accounts/{id}/lines", bankAccountHandler.ListLines)
+				r.Post("/accounts/{id}/lines", bankAccountHandler.AddLines)
+				r.Delete("/accounts/{id}/lines/{lineId}", bankAccountHandler.DeleteLine)
+				r.Post("/accounts/{id}/lines/{lineId}/match", bankAccountHandler.Match)
+				r.Post("/accounts/{id}/lines/{lineId}/unmatch", bankAccountHandler.Unmatch)
+
+				r.Get("/deposits", depositHandler.List)
+				r.Get("/deposits/{id}", depositHandler.Get)
+				r.Put("/deposits/{id}/account", depositHandler.SetAccount)
+				r.Post("/deposits/{id}/deductions", depositHandler.AddDeduction)
+				r.Delete("/deposits/{id}/deductions/{deductionId}", depositHandler.RemoveDeduction)
+				r.Post("/deposits/{id}/settle", depositHandler.Settle)
+				r.Post("/deposits/{id}/forfeit", depositHandler.Forfeit)
+
+				r.Get("/owners", propertyOwnerHandler.List)
+				r.Post("/owners", propertyOwnerHandler.Create)
+				r.Put("/owners/{id}", propertyOwnerHandler.Update)
+				r.Delete("/owners/{id}", propertyOwnerHandler.Delete)
+
+				r.Get("/statements", statementHandler.List)
+				r.Post("/statements", statementHandler.Generate)
+				r.Get("/statements/{id}", statementHandler.Get)
+				r.Get("/statements/{id}/pdf", statementHandler.PDF)
+				r.Post("/statements/{id}/send", statementHandler.Send)
+				r.Post("/statements/{id}/mark-sent", statementHandler.MarkSent)
+				r.Post("/statements/{id}/mark-paid", statementHandler.MarkPaid)
 			})
 		})
 	})

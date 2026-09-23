@@ -5,9 +5,15 @@ name: CI
 # see backend/Makefile's test-integration target) are intentionally not
 # run here — they need Docker-in-Docker and are slower; run them
 # locally or wire up a separate job later if that becomes a problem.
+#
+# DISABLED (2026-09-23): automatic runs turned off — this no longer
+# triggers on PRs. Still runnable by hand from the Actions tab
+# ("Run workflow"). To restore automatic runs, delete the
+# `workflow_dispatch:` line below and uncomment the `pull_request` block.
 on:
-  pull_request:
-    branches: [dev, main]
+  workflow_dispatch:
+  # pull_request:
+  #   branches: [dev, main]
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number }}

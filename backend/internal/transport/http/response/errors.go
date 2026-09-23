@@ -119,6 +119,22 @@ func classify(err error) classification {
 			severity: slog.LevelInfo,
 		}
 
+	case errors.Is(err, domain.ErrUnavailable):
+		return classification{
+			status:   http.StatusServiceUnavailable,
+			code:     "unavailable",
+			message:  "This feature isn't configured on the server.",
+			severity: slog.LevelWarn,
+		}
+
+	case errors.Is(err, domain.ErrConflict):
+		return classification{
+			status:   http.StatusConflict,
+			code:     "conflict",
+			message:  "The request conflicts with the current state of the resource.",
+			severity: slog.LevelInfo,
+		}
+
 	case errors.Is(err, domain.ErrInvalidInput):
 		return classification{
 			status:   http.StatusBadRequest,

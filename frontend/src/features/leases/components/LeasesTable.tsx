@@ -30,9 +30,17 @@ import VisibilityOutlined from '@mui/icons-material/VisibilityOutlined';
 import { tokens } from '@/app/tokens';
 import { EmptyState, TableSkeletonRows, type TableSkeletonColumn } from '@/shared/components';
 import type { LeasePortfolioSortKey } from '../api/leasesApi';
-import { LEASE_DISPLAY_STATUS_LABELS, LEASE_TYPE_LABELS, type LeaseDisplayStatus, type LeaseRowWithUnitProperty } from '../types';
+import {
+  LEASE_DISPLAY_STATUS_LABELS,
+  LEASE_TYPE_LABELS,
+  type LeaseDisplayStatus,
+  type LeaseRowWithUnitProperty,
+} from '../types';
 
-const STATUS_COLOR: Record<LeaseDisplayStatus, 'success' | 'default' | 'warning' | 'error' | 'info'> = {
+const STATUS_COLOR: Record<
+  LeaseDisplayStatus,
+  'success' | 'default' | 'warning' | 'error' | 'info'
+> = {
   draft: 'default',
   upcoming: 'info',
   active: 'success',
@@ -41,7 +49,11 @@ const STATUS_COLOR: Record<LeaseDisplayStatus, 'success' | 'default' | 'warning'
   terminated: 'default',
 };
 
-const currency = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+const currency = new Intl.NumberFormat('en-US', {
+  style: 'currency',
+  currency: 'USD',
+  maximumFractionDigits: 0,
+});
 const dateFormatter = new Intl.DateTimeFormat('en-US', { dateStyle: 'medium' });
 
 function formatDate(iso: string): string {
@@ -74,7 +86,8 @@ const SKELETON_COLUMNS: TableSkeletonColumn[] = [
   { shapes: [{ variant: 'circular', width: 18, height: 18 }] },
 ];
 
-export type LeasesPortfolioEmptyState = { kind: 'none' } | { kind: 'first-time' } | { kind: 'filtered' };
+export type LeasesPortfolioEmptyState =
+  { kind: 'none' } | { kind: 'first-time' } | { kind: 'filtered' };
 
 interface LeasesTableProps {
   loading: boolean;
@@ -114,7 +127,10 @@ export function LeasesTable({
   onEditLease,
   onDeleteLease,
 }: LeasesTableProps) {
-  const [kebabRow, setKebabRow] = useState<{ lease: LeaseRowWithUnitProperty; anchor: HTMLElement } | null>(null);
+  const [kebabRow, setKebabRow] = useState<{
+    lease: LeaseRowWithUnitProperty;
+    anchor: HTMLElement;
+  } | null>(null);
 
   return (
     <Paper variant="outlined" sx={{ overflow: 'hidden' }}>
@@ -130,7 +146,11 @@ export function LeasesTable({
                         active={sortKey === col.sortKey}
                         direction={sortKey === col.sortKey ? sortDir : 'asc'}
                         onClick={() => onSort(col.sortKey!)}
-                        sx={{ '& .MuiTableSortLabel-icon': { opacity: sortKey === col.sortKey ? 1 : 0.4 } }}
+                        sx={{
+                          '& .MuiTableSortLabel-icon': {
+                            opacity: sortKey === col.sortKey ? 1 : 0.4,
+                          },
+                        }}
                       >
                         {col.label}
                       </TableSortLabel>
@@ -171,7 +191,11 @@ export function LeasesTable({
                     title="No leases match your filters"
                     description="Try a different search term, or reset the view to see every lease in your portfolio."
                     action={
-                      <Button variant="outlined" onClick={onResetView} sx={{ borderColor: tokens.slate[300], color: tokens.slate[700] }}>
+                      <Button
+                        variant="outlined"
+                        onClick={onResetView}
+                        sx={{ borderColor: tokens.slate[300], color: tokens.slate[700] }}
+                      >
                         Reset view
                       </Button>
                     }
@@ -182,54 +206,92 @@ export function LeasesTable({
 
             {!loading &&
               leases.map((l) => (
-                <TableRow key={l.id} hover onClick={() => onViewLease(l)} sx={{ cursor: 'pointer' }}>
+                <TableRow
+                  key={l.id}
+                  hover
+                  onClick={() => onViewLease(l)}
+                  sx={{ cursor: 'pointer' }}
+                >
                   <TableCell onClick={(e) => e.stopPropagation()}>
-                    <Link component={RouterLink} to={`/properties/${l.propertyId}`} sx={{ fontSize: 13, fontWeight: 600 }}>
+                    <Link
+                      component={RouterLink}
+                      to={`/properties/${l.propertyId}`}
+                      sx={{ fontSize: 13, fontWeight: 600 }}
+                    >
                       {l.propertyName}
                     </Link>
                   </TableCell>
                   <TableCell>
-                    <Typography sx={{ fontSize: 13, color: tokens.slate[700] }}>{l.unitName}</Typography>
+                    <Typography sx={{ fontSize: 13, color: tokens.slate[700] }}>
+                      {l.unitName}
+                    </Typography>
                   </TableCell>
                   <TableCell>
-                    <Typography sx={{ fontWeight: 600, fontSize: 13.5 }}>{l.primaryResidentName}</Typography>
+                    <Typography sx={{ fontWeight: 600, fontSize: 13.5 }}>
+                      {l.primaryResidentName}
+                    </Typography>
                     {l.coResidents.length > 0 && (
-                      <Typography sx={{ fontSize: 12, color: tokens.slate[500] }}>+{l.coResidents.length} co-resident{l.coResidents.length === 1 ? '' : 's'}</Typography>
+                      <Typography sx={{ fontSize: 12, color: tokens.slate[500] }}>
+                        +{l.coResidents.length} co-resident{l.coResidents.length === 1 ? '' : 's'}
+                      </Typography>
                     )}
                   </TableCell>
                   <TableCell>
-                    <Typography sx={{ fontSize: 12.5, color: tokens.slate[600] }}>{formatDate(l.startDate)}</Typography>
+                    <Typography sx={{ fontSize: 12.5, color: tokens.slate[600] }}>
+                      {formatDate(l.startDate)}
+                    </Typography>
                   </TableCell>
                   <TableCell>
-                    <Typography sx={{ fontSize: 12.5, color: tokens.slate[600] }}>{l.endDate ? formatDate(l.endDate) : 'No end date'}</Typography>
+                    <Typography sx={{ fontSize: 12.5, color: tokens.slate[600] }}>
+                      {l.endDate ? formatDate(l.endDate) : 'No end date'}
+                    </Typography>
                   </TableCell>
                   <TableCell>
-                    <Typography sx={{ fontSize: 12.5, color: tokens.slate[600] }}>{LEASE_TYPE_LABELS[l.leaseType]}</Typography>
+                    <Typography sx={{ fontSize: 12.5, color: tokens.slate[600] }}>
+                      {LEASE_TYPE_LABELS[l.leaseType]}
+                    </Typography>
                   </TableCell>
                   <TableCell>
-                    <Chip label={LEASE_DISPLAY_STATUS_LABELS[l.displayStatus]} color={STATUS_COLOR[l.displayStatus]} size="small" sx={{ fontWeight: 600 }} />
+                    <Chip
+                      label={LEASE_DISPLAY_STATUS_LABELS[l.displayStatus]}
+                      color={STATUS_COLOR[l.displayStatus]}
+                      size="small"
+                      sx={{ fontWeight: 600 }}
+                    />
                   </TableCell>
                   <TableCell align="right">
-                    <Typography sx={{ fontFamily: tokens.fontMono, fontSize: 13 }}>{currency.format(l.monthlyRent)}</Typography>
+                    <Typography sx={{ fontFamily: tokens.fontMono, fontSize: 13 }}>
+                      {currency.format(l.monthlyRent)}
+                    </Typography>
                   </TableCell>
                   <TableCell>
                     <Tooltip title={l.signed ? 'Signed' : 'Not yet signed'}>
                       {l.signed ? (
                         <CheckCircleOutlined sx={{ fontSize: 18, color: 'success.main' }} />
                       ) : (
-                        <RadioButtonUncheckedOutlined sx={{ fontSize: 18, color: tokens.slate[300] }} />
+                        <RadioButtonUncheckedOutlined
+                          sx={{ fontSize: 18, color: tokens.slate[300] }}
+                        />
                       )}
                     </Tooltip>
                   </TableCell>
                   <TableCell padding="checkbox" onClick={(e) => e.stopPropagation()}>
                     <Stack direction="row" spacing={0.25} sx={{ justifyContent: 'flex-end' }}>
                       <Tooltip title="Edit lease">
-                        <IconButton size="small" onClick={() => onEditLease(l)} aria-label={`Edit lease for ${l.primaryResidentName}`}>
+                        <IconButton
+                          size="small"
+                          onClick={() => onEditLease(l)}
+                          aria-label={`Edit lease for ${l.primaryResidentName}`}
+                        >
                           <EditOutlined fontSize="small" />
                         </IconButton>
                       </Tooltip>
                       <Tooltip title="More actions">
-                        <IconButton size="small" onClick={(e) => setKebabRow({ lease: l, anchor: e.currentTarget })} aria-label={`More actions for ${l.primaryResidentName}'s lease`}>
+                        <IconButton
+                          size="small"
+                          onClick={(e) => setKebabRow({ lease: l, anchor: e.currentTarget })}
+                          aria-label={`More actions for ${l.primaryResidentName}'s lease`}
+                        >
                           <MoreVertOutlined fontSize="small" />
                         </IconButton>
                       </Tooltip>

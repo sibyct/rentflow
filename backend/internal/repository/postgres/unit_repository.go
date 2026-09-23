@@ -260,6 +260,9 @@ func (r *UnitRepository) Delete(ctx context.Context, id uuid.UUID) error {
 
 	tag, err := r.pool.Exec(ctx, q, id)
 	if err != nil {
+		if isForeignKeyViolation(err) {
+			return fmt.Errorf("delete unit %s: has accounting history: %w", id, domain.ErrConflict)
+		}
 		return fmt.Errorf("delete unit %s: %w", id, err)
 	}
 	if tag.RowsAffected() == 0 {

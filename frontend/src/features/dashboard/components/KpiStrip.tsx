@@ -1,23 +1,18 @@
 import { useNavigate } from 'react-router-dom';
 import Stack from '@mui/material/Stack';
-import Tooltip from '@mui/material/Tooltip';
+import { useAccountingDashboard } from '@/features/accounting/hooks/useAccountingQueries';
 import { useProperties } from '@/features/properties/hooks/usePropertiesQueries';
 import { useLeasesPortfolio } from '@/features/leases/hooks/useLeasesQueries';
 import { useWorkOrderSummary } from '@/features/maintenance/hooks/useWorkOrdersQueries';
 import { MetricCard } from '@/shared/components';
-
-const currency = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+import { formatMoneyWhole } from '@/shared/lib/format';
 
 /**
- * 5 KPI cards. 3 are real (Occupancy, Leases Expiring, Open Maintenance)
- * — 2 (Collected This Month, Outstanding Balance) are static demo
- * values, clearly labeled: there's no payments/invoicing feature in
- * this backend to read real figures from (see PropertyUnitStats'
- * TotalCollected doc comment — it's a rent-roll approximation, not
- * receipts, and there's no arrears/outstanding-balance concept at
- * all). Matches this app's no-fabricated-data convention everywhere
- * else, and the honesty this same page's static placeholder had before
- * this Dashboard existed.
+ * 5 KPI cards, every one real: occupancy, leases expiring and open
+ * maintenance from their own modules, and Collected This Month /
+ * Outstanding Balance from the accounting ledger (cash basis — money
+ * actually received this calendar month, and everything billed and due
+ * but still unpaid).
  */
 export function KpiStrip() {
   const navigate = useNavigate();
@@ -32,6 +27,10 @@ export function KpiStrip() {
   const totalUnits = properties.reduce((sum, p) => sum + p.unitCount, 0);
   const occupiedUnits = properties.reduce((sum, p) => sum + Math.round((p.occupancyPct / 100) * p.unitCount), 0);
   const blendedOccupancyPct = totalUnits > 0 ? Math.round((occupiedUnits / totalUnits) * 100) : 0;
+
+  const { data: accounting, isLoading: accountingLoading } = useAccountingDashboard('6months');
+  const collectedPct =
+    accounting && accounting.expectedCents > 0 ? Math.round((accounting.collectedCents / accounting.expectedCents) * 100) : null;
 
   const { data: leasesData, isLoading: leasesLoading } = useLeasesPortfolio({
     status: 'expiring_soon',
@@ -51,16 +50,22 @@ export function KpiStrip() {
         loading={propertiesLoading}
         onClick={() => navigate('/units')}
       />
-      <Tooltip title="Demo data — there's no payments feature yet to read real figures from">
-        <span>
-          <MetricCard label="Collected This Month" value="$114,220" delta="Demo data · 96.5% of billed" />
-        </span>
-      </Tooltip>
-      <Tooltip title="Demo data — there's no payments feature yet to read real figures from">
-        <span>
-          <MetricCard label="Outstanding Balance" value={currency.format(4180)} delta="Demo data · 2 accounts past due" deltaTone="error" />
-        </span>
-      </Tooltip>
+      <MetricCard
+        label="Collected This Month"
+        value={formatMoneyWhole(accounting?.collectedCents ?? 0)}
+        delta={collectedPct === null ? 'Nothing billed yet' : `${collectedPct}% of ${formatMoneyWhole(accounting?.expectedCents ?? 0)} billed`}
+        deltaTone={collectedPct !== null && collectedPct >= 90 ? 'success' : 'neutral'}
+        loading={accountingLoading}
+        onClick={() => navigate('/accounting/rent-roll')}
+      />
+      <MetricCard
+        label="Outstanding Balance"
+        value={formatMoneyWhole(accounting?.outstandingCents ?? 0)}
+        delta={accounting && accounting.lateRentCount > 0 ? `${accounting.lateRentCount} past due` : 'Nothing past due'}
+        deltaTone={accounting && accounting.lateRentCount > 0 ? 'error' : 'neutral'}
+        loading={accountingLoading}
+        onClick={() => navigate('/accounting/rent-roll?status=late')}
+      />
       <MetricCard
         label="Open Maintenance Requests"
         value={summaryLoading ? '' : String(summary?.open ?? 0)}

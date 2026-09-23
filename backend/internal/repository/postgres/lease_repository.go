@@ -207,6 +207,11 @@ func (r *LeaseRepository) Delete(ctx context.Context, id uuid.UUID) error {
 
 	tag, err := r.pool.Exec(ctx, q, id)
 	if err != nil {
+		// Ledger rows reference leases with ON DELETE RESTRICT: a lease
+		// with billing history is terminated, not deleted.
+		if isForeignKeyViolation(err) {
+			return fmt.Errorf("delete lease %s: has accounting history: %w", id, domain.ErrConflict)
+		}
 		return fmt.Errorf("delete lease %s: %w", id, err)
 	}
 	if tag.RowsAffected() == 0 {

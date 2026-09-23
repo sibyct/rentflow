@@ -14,6 +14,11 @@ import { LeaseDetailPage } from './pages/LeaseDetailPage';
 import { MaintenancePage } from './pages/MaintenancePage';
 import { VendorsPage } from './pages/VendorsPage';
 import { VendorDetailPage } from './pages/VendorDetailPage';
+import { AccountingDashboardPage } from './pages/AccountingDashboardPage';
+import { RentRollPage } from './pages/RentRollPage';
+import { ExpensesPage } from './pages/ExpensesPage';
+import { ChargesPage } from './pages/ChargesPage';
+import { AccountingLayout } from '@/features/accounting';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { PlaceholderPage } from '@/shared/components';
 
@@ -55,6 +60,14 @@ export function AppRouter() {
 
         <Route path="vendors" element={<VendorsPage />} />
         <Route path="vendors/:id" element={<VendorDetailPage />} />
+
+        {/* Accounting: a shared tabbed layout, one real route per tab. */}
+        <Route path="accounting" element={<AccountingLayout />}>
+          <Route index element={<AccountingDashboardPage />} />
+          <Route path="rent-roll" element={<RentRollPage />} />
+          <Route path="expenses" element={<ExpensesPage />} />
+          <Route path="charges" element={<ChargesPage />} />
+        </Route>
 
         {/* Nav destinations with no real feature yet — see navConfig.tsx
             and README for how to replace one of these with a real page. */}

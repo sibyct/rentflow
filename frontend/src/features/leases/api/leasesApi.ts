@@ -139,7 +139,10 @@ function toCreateLeaseRequest(values: LeaseFormValues) {
     late_fee_grace_days: parseNumber(values.lateFeeGraceDays),
     primary_resident_name: values.primaryResidentName.trim(),
     co_residents: values.coResidents
-      ? values.coResidents.split(',').map((s) => s.trim()).filter(Boolean)
+      ? values.coResidents
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean)
       : [],
     emergency_contact: values.emergencyContact?.trim() || undefined,
     notes: values.notes?.trim() || undefined,
@@ -202,7 +205,9 @@ function buildPortfolioListQuery(params: LeasePortfolioListParams): string {
 export const leasesApi = {
   listForOwner: (params: LeasePortfolioListParams): Promise<LeasePortfolioListResult> =>
     apiClient
-      .getWithMeta<LeaseWire[], LeaseListMetaWire>(`/api/v1/leases?${buildPortfolioListQuery(params)}`)
+      .getWithMeta<LeaseWire[], LeaseListMetaWire>(
+        `/api/v1/leases?${buildPortfolioListQuery(params)}`,
+      )
       .then(({ data, meta }) => ({ leases: data.map(toLeaseRow), total: meta.total })),
 
   get: (id: string): Promise<LeaseDetailWithUnitProperty> =>
@@ -215,7 +220,9 @@ export const leasesApi = {
       .then((r) => leasesApi.get(r.id)),
 
   update: (id: string, values: LeaseFormValues): Promise<LeaseDetailWithUnitProperty> =>
-    apiClient.put<{ id: string }>(`/api/v1/leases/${id}`, toUpdateLeaseRequest(values)).then((r) => leasesApi.get(r.id)),
+    apiClient
+      .put<{ id: string }>(`/api/v1/leases/${id}`, toUpdateLeaseRequest(values))
+      .then((r) => leasesApi.get(r.id)),
 
   delete: (id: string): Promise<void> => apiClient.delete<void>(`/api/v1/leases/${id}`),
 };

@@ -8,7 +8,7 @@ interface MetricCardProps {
   label: string;
   value: string;
   delta: string;
-  deltaTone?: 'neutral' | 'error';
+  deltaTone?: 'neutral' | 'error' | 'success';
   /** Present = the whole card is clickable (e.g. Dashboard KPI cards routing into their module). Absent = static, as every pre-Dashboard usage already is. */
   onClick?: () => void;
   /** Shows a skeleton in place of value/delta — for a card whose data hasn't loaded yet, so the Dashboard's sections can render progressively rather than blocking on the slowest query. */
@@ -39,7 +39,14 @@ export function MetricCard({ label, value, delta, deltaTone = 'neutral', onClick
           <Typography sx={{ fontFamily: tokens.fontMono, fontSize: 26, fontWeight: 600, color: tokens.slate[900], mt: 0.5 }}>
             {value}
           </Typography>
-          <Typography sx={{ fontSize: 13, mt: 0.5, color: deltaTone === 'error' ? tokens.error : tokens.slate[500] }}>
+          <Typography
+            sx={{
+              fontSize: 13,
+              mt: 0.5,
+              color:
+                deltaTone === 'error' ? tokens.error : deltaTone === 'success' ? tokens.brand.green : tokens.slate[500],
+            }}
+          >
             {delta}
           </Typography>
         </>

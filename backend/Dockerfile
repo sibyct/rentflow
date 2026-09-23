@@ -14,12 +14,21 @@ RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /out/api ./cmd/api
 # why this exists as its own binary rather than running on API startup.
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /out/migrate ./cmd/migrate
 
+# Background worker (scheduled rent / late fees / recurring expenses /
+# owner statements, and the email outbox). Same image as the API, run as
+# its own Fly process group — see fly.toml's [processes].
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /out/worker ./cmd/worker
+
 FROM gcr.io/distroless/static-debian12:nonroot
 WORKDIR /app
 COPY --from=build /out/api ./api
 COPY --from=build /out/migrate ./migrate
+COPY --from=build /out/worker ./worker
 COPY --from=build /src/migrations ./migrations
 
 USER nonroot:nonroot
 EXPOSE 8080
-ENTRYPOINT ["./api"]
+# CMD, not ENTRYPOINT: Fly's [processes] and release_command each replace
+# the command, and with an ENTRYPOINT set they would be appended to it as
+# arguments (e.g. ./api /app/worker) instead of running.
+CMD ["./api"]

@@ -62,7 +62,7 @@ export const navGroups: NavGroup[] = [
     id: 'finance',
     label: 'Finance',
     items: [
-      { id: 'accounting', label: 'Accounting', icon: CalculateOutlined, disabled: true },
+      { id: 'accounting', label: 'Accounting', icon: CalculateOutlined, path: '/accounting' },
       { id: 'reports', label: 'Reports', icon: BarChartOutlined, disabled: true },
     ],
   },

@@ -39,8 +39,34 @@ primary_region = "iad"
   # why: the frontend proxies /api/ through its own nginx, so the
   # browser never talks to this app's domain directly.
   ALLOWED_ORIGINS = "https://propertymanagement-web-staging.fly.dev"
+  # Object storage for receipts / deposit documents (any S3-compatible
+  # store: AWS S3, Tigris, Cloudflare R2). The bucket must exist and allow
+  # browser POSTs from the frontend origin (CORS: POST, origin https://propertymanagement-web-staging.fly.dev).
+  # Set S3_ACCESS_KEY / S3_SECRET_KEY with fly secrets set — never here.
+  # Left unset, uploads answer 503 and everything else still works.
+  # S3_ENDPOINT = "https://s3.us-east-1.amazonaws.com"
+  # S3_BUCKET = "rentflow-staging"
+  # S3_REGION = "us-east-1"
+  #
+  # Outbound email for owner statements. SMTP_HOST unset = statements can
+  # still be generated and downloaded, but "Send" answers 503. Secrets
+  # (SMTP_USER, SMTP_PASSWORD) via fly secrets set.
+  # SMTP_HOST = "smtp.example.com"
+  # SMTP_PORT = "587"
+  # SMTP_TLS = "starttls"
+  # SMTP_FROM = "RentFlow <statements@yourdomain.com>"
+  PUBLIC_APP_URL = "https://propertymanagement-web-staging.fly.dev"
+
+[processes]
+  app = "/app/api"
+  # Scheduled rent / late fees / recurring expenses / owner statements and
+  # the email outbox. Run exactly one or two (fly scale count app=1 worker=1).
+  # Jobs claim a (job, day) row in worker_runs, so extra machines are safe
+  # but pointless.
+  worker = "/app/worker"
 
 [http_service]
+  processes = ["app"]
   internal_port = 8080
   force_https = true
   auto_stop_machines = true
@@ -48,6 +74,13 @@ primary_region = "iad"
   min_machines_running = 0
 
 [[vm]]
+  processes = ["app"]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 256
+
+[[vm]]
+  processes = ["worker"]
   cpu_kind = "shared"
   cpus = 1
   memory_mb = 256

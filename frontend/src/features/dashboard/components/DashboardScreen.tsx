@@ -19,7 +19,7 @@ import { EmptyState, LoadingSpinner } from '@/shared/components';
 import { ActivityFeed } from './ActivityFeed';
 import { ComplianceAlertsCard } from './ComplianceAlertsCard';
 import { ExpiringLeasesList } from './ExpiringLeasesList';
-import { IncomeExpenseChart } from './IncomeExpenseChart';
+import { IncomeExpenseChart } from '@/features/accounting/components/IncomeExpenseChart';
 import { KpiStrip } from './KpiStrip';
 import { MaintenanceSummaryCard } from './MaintenanceSummaryCard';
 import { VacantUnitsList } from './VacantUnitsList';
@@ -109,8 +109,7 @@ export function DashboardScreen() {
       <ActivityFeed />
 
       <Typography sx={{ fontSize: 11.5, color: tokens.slate[400], mt: 2 }}>
-        Figures marked "Demo data" require a Payments/Accounting feature this app doesn't have yet — everything else on
-        this page is real.
+        Money figures are cash basis, from the accounting ledger — payments actually received and paid out.
       </Typography>
     </Box>
   );

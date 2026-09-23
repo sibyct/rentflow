@@ -21,10 +21,34 @@ type WorkOrderService struct {
 	propertyRepo domain.PropertyRepository
 	vendorRepo   domain.VendorRepository
 	log          *slog.Logger
+	// expenses is optional (nil in tests and any deployment without the
+	// accounting module wired): when set, completing a work order with an
+	// actual cost creates its expense. See SetExpenseSyncer.
+	expenses domain.WorkOrderExpenseSyncer
 }
 
 func NewWorkOrderService(repo domain.WorkOrderRepository, unitRepo domain.UnitRepository, propertyRepo domain.PropertyRepository, vendorRepo domain.VendorRepository, log *slog.Logger) *WorkOrderService {
 	return &WorkOrderService{repo: repo, unitRepo: unitRepo, propertyRepo: propertyRepo, vendorRepo: vendorRepo, log: log}
+}
+
+// SetExpenseSyncer wires the accounting hook after construction (a setter
+// rather than a constructor argument because accounting is built after,
+// and depends on, the same repositories).
+func (s *WorkOrderService) SetExpenseSyncer(syncer domain.WorkOrderExpenseSyncer) {
+	s.expenses = syncer
+}
+
+// syncExpense is best-effort, like logActivity: the work order write has
+// already succeeded, so a ledger hiccup is logged rather than failing
+// (or rolling back) the maintenance update. The next write re-syncs.
+func (s *WorkOrderService) syncExpense(ctx context.Context, ownerID uuid.UUID, w *domain.WorkOrder) {
+	if s.expenses == nil {
+		return
+	}
+	if err := s.expenses.SyncFromWorkOrder(ctx, ownerID, w); err != nil {
+		s.log.WarnContext(ctx, "failed to sync work order expense",
+			slog.String("work_order_id", w.ID.String()), slog.Any("error", err))
+	}
 }
 
 var _ domain.WorkOrderService = (*WorkOrderService)(nil)
@@ -290,6 +314,10 @@ func (s *WorkOrderService) UpdateWorkOrder(ctx context.Context, id, ownerID uuid
 		s.logActivity(ctx, w.ID, domain.MaintenanceActivityKindStatusChange, fmt.Sprintf("Status changed from %s to %s", oldStatus, w.Status), &oldStr, &newStr)
 	}
 
+	// Every update, not only status changes: editing the actual cost of an
+	// already-completed work order must reach its expense too.
+	s.syncExpense(ctx, ownerID, w)
+
 	return w, nil
 }
 
@@ -335,6 +363,23 @@ func (s *WorkOrderService) BulkUpdateStatus(ctx context.Context, ownerID uuid.UU
 	n, err := s.repo.BulkUpdateStatus(ctx, ownerID, ids, status)
 	if err != nil {
 		return 0, fmt.Errorf("bulk update work order status: %w", err)
+	}
+
+	// Bulk updates skip the per-row path above, so run the expense sync
+	// explicitly. The repository already restricted the write to rows the
+	// owner owns; the ownership re-check here keeps a foreign id from
+	// ever reaching the ledger.
+	if s.expenses != nil {
+		for _, id := range ids {
+			w, err := s.repo.GetByID(ctx, id)
+			if err != nil {
+				continue
+			}
+			if _, err := s.requireOwnedProperty(ctx, w.PropertyID, ownerID); err != nil {
+				continue
+			}
+			s.syncExpense(ctx, ownerID, w)
+		}
 	}
 	return n, nil
 }
