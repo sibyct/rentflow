@@ -85,9 +85,10 @@ func (s WorkOrderStatus) IsOpen() bool {
 // ReportedBy/AssignedTo are freeform text, not a foreign key to a
 // tenant or vendor/staff record: neither entity exists in this
 // codebase yet, so this mirrors Lease.PrimaryResidentName's precedent
-// rather than fabricating a link. PhotoLink/InvoiceLink are likewise
-// freeform URLs, not real file uploads — there is no file-storage
-// feature here either.
+// rather than fabricating a link. PhotoAttachmentID/InvoiceAttachmentID
+// point at real uploaded files (see domain/attachment.go) — this used
+// to be freeform URL text, back when there was no file-storage feature
+// in this codebase; that's no longer true, so these are real uploads now.
 type WorkOrder struct {
 	ID                uuid.UUID
 	PropertyID        uuid.UUID
@@ -108,20 +109,20 @@ type WorkOrder struct {
 	// Rating is the optional 1-5 star rating a manager gives the vendor
 	// after marking this work order completed — nil until then, and
 	// meaningless without VendorID set.
-	Rating             *int
-	AccessInstructions string
-	ScheduledStart     *time.Time
-	ScheduledEnd       *time.Time
-	DueDate            *time.Time
-	EstimatedCost      *float64
-	ActualCost         *float64
-	PhotoLink          string
-	InvoiceLink        string
-	InternalNotes      string
-	RecurringRuleID    *uuid.UUID
-	CompletedAt        *time.Time
-	CreatedAt          time.Time
-	UpdatedAt          time.Time
+	Rating              *int
+	AccessInstructions  string
+	ScheduledStart      *time.Time
+	ScheduledEnd        *time.Time
+	DueDate             *time.Time
+	EstimatedCost       *float64
+	ActualCost          *float64
+	PhotoAttachmentID   *uuid.UUID
+	InvoiceAttachmentID *uuid.UUID
+	InternalNotes       string
+	RecurringRuleID     *uuid.UUID
+	CompletedAt         *time.Time
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
 }
 
 // IsOverdue reports whether DueDate has passed and the work order is
@@ -135,56 +136,58 @@ func (w *WorkOrder) IsOverdue(now time.Time) bool {
 }
 
 type CreateWorkOrderInput struct {
-	PropertyID         uuid.UUID
-	UnitID             *uuid.UUID
-	Title              string
-	Description        string
-	Category           WorkOrderCategory
-	Priority           WorkOrderPriority
-	Status             WorkOrderStatus
-	ReportedBy         string
-	ReportedByContact  string
-	AssignedTo         string
-	AssignedToContact  string
-	VendorID           *uuid.UUID
-	AccessInstructions string
-	ScheduledStart     *time.Time
-	ScheduledEnd       *time.Time
-	DueDate            *time.Time
-	EstimatedCost      *float64
-	ActualCost         *float64
-	PhotoLink          string
-	InvoiceLink        string
-	InternalNotes      string
-	RecurringRuleID    *uuid.UUID
+	PropertyID          uuid.UUID
+	UnitID              *uuid.UUID
+	Title               string
+	Description         string
+	Category            WorkOrderCategory
+	Priority            WorkOrderPriority
+	Status              WorkOrderStatus
+	ReportedBy          string
+	ReportedByContact   string
+	AssignedTo          string
+	AssignedToContact   string
+	VendorID            *uuid.UUID
+	AccessInstructions  string
+	ScheduledStart      *time.Time
+	ScheduledEnd        *time.Time
+	DueDate             *time.Time
+	EstimatedCost       *float64
+	ActualCost          *float64
+	PhotoAttachmentID   *uuid.UUID
+	InvoiceAttachmentID *uuid.UUID
+	InternalNotes       string
+	RecurringRuleID     *uuid.UUID
 }
 
 // UpdateWorkOrderInput fields are all optional (nil = leave unchanged)
 // — mirrors UpdateLeaseInput/UpdateUnitInput.
 type UpdateWorkOrderInput struct {
-	UnitID             *uuid.UUID
-	UnitIDSet          bool // UnitID is itself nullable, so "clear it back to property-wide" needs its own flag
-	Title              *string
-	Description        *string
-	Category           *WorkOrderCategory
-	Priority           *WorkOrderPriority
-	Status             *WorkOrderStatus
-	ReportedBy         *string
-	ReportedByContact  *string
-	AssignedTo         *string
-	AssignedToContact  *string
-	VendorID           *uuid.UUID
-	VendorIDSet        bool // VendorID is itself nullable, so "unassign the vendor" needs its own flag
-	Rating             *int
-	AccessInstructions *string
-	ScheduledStart     *time.Time
-	ScheduledEnd       *time.Time
-	DueDate            *time.Time
-	EstimatedCost      *float64
-	ActualCost         *float64
-	PhotoLink          *string
-	InvoiceLink        *string
-	InternalNotes      *string
+	UnitID                 *uuid.UUID
+	UnitIDSet              bool // UnitID is itself nullable, so "clear it back to property-wide" needs its own flag
+	Title                  *string
+	Description            *string
+	Category               *WorkOrderCategory
+	Priority               *WorkOrderPriority
+	Status                 *WorkOrderStatus
+	ReportedBy             *string
+	ReportedByContact      *string
+	AssignedTo             *string
+	AssignedToContact      *string
+	VendorID               *uuid.UUID
+	VendorIDSet            bool // VendorID is itself nullable, so "unassign the vendor" needs its own flag
+	Rating                 *int
+	AccessInstructions     *string
+	ScheduledStart         *time.Time
+	ScheduledEnd           *time.Time
+	DueDate                *time.Time
+	EstimatedCost          *float64
+	ActualCost             *float64
+	PhotoAttachmentID      *uuid.UUID
+	PhotoAttachmentIDSet   bool // PhotoAttachmentID is itself nullable, so "remove the photo" needs its own flag
+	InvoiceAttachmentID    *uuid.UUID
+	InvoiceAttachmentIDSet bool // same as PhotoAttachmentIDSet, for the invoice
+	InternalNotes          *string
 }
 
 type WorkOrderSortKey string

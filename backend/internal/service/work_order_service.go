@@ -16,19 +16,20 @@ import (
 // PropertyID — one hop, unlike Lease/Unit which resolve through a
 // parent, since work_orders.property_id is a direct column.
 type WorkOrderService struct {
-	repo         domain.WorkOrderRepository
-	unitRepo     domain.UnitRepository
-	propertyRepo domain.PropertyRepository
-	vendorRepo   domain.VendorRepository
-	log          *slog.Logger
+	repo           domain.WorkOrderRepository
+	unitRepo       domain.UnitRepository
+	propertyRepo   domain.PropertyRepository
+	vendorRepo     domain.VendorRepository
+	attachmentRepo domain.AttachmentRepository
+	log            *slog.Logger
 	// expenses is optional (nil in tests and any deployment without the
 	// accounting module wired): when set, completing a work order with an
 	// actual cost creates its expense. See SetExpenseSyncer.
 	expenses domain.WorkOrderExpenseSyncer
 }
 
-func NewWorkOrderService(repo domain.WorkOrderRepository, unitRepo domain.UnitRepository, propertyRepo domain.PropertyRepository, vendorRepo domain.VendorRepository, log *slog.Logger) *WorkOrderService {
-	return &WorkOrderService{repo: repo, unitRepo: unitRepo, propertyRepo: propertyRepo, vendorRepo: vendorRepo, log: log}
+func NewWorkOrderService(repo domain.WorkOrderRepository, unitRepo domain.UnitRepository, propertyRepo domain.PropertyRepository, vendorRepo domain.VendorRepository, attachmentRepo domain.AttachmentRepository, log *slog.Logger) *WorkOrderService {
+	return &WorkOrderService{repo: repo, unitRepo: unitRepo, propertyRepo: propertyRepo, vendorRepo: vendorRepo, attachmentRepo: attachmentRepo, log: log}
 }
 
 // SetExpenseSyncer wires the accounting hook after construction (a setter
@@ -64,6 +65,12 @@ func (s *WorkOrderService) CreateWorkOrder(ctx context.Context, ownerID uuid.UUI
 	if err != nil {
 		return nil, fmt.Errorf("create work order: %w", err)
 	}
+	if err := requireOwnedAttachment(ctx, s.attachmentRepo, ownerID, input.PhotoAttachmentID, "photo_attachment_id"); err != nil {
+		return nil, fmt.Errorf("create work order: %w", err)
+	}
+	if err := requireOwnedAttachment(ctx, s.attachmentRepo, ownerID, input.InvoiceAttachmentID, "invoice_attachment_id"); err != nil {
+		return nil, fmt.Errorf("create work order: %w", err)
+	}
 
 	if input.Status == "" {
 		input.Status = domain.WorkOrderStatusNew
@@ -83,31 +90,31 @@ func (s *WorkOrderService) CreateWorkOrder(ctx context.Context, ownerID uuid.UUI
 
 	now := time.Now().UTC()
 	w := &domain.WorkOrder{
-		ID:                 uuid.New(),
-		PropertyID:         input.PropertyID,
-		UnitID:             input.UnitID,
-		Title:              input.Title,
-		Description:        input.Description,
-		Category:           input.Category,
-		Priority:           input.Priority,
-		Status:             input.Status,
-		ReportedBy:         input.ReportedBy,
-		ReportedByContact:  input.ReportedByContact,
-		AssignedTo:         input.AssignedTo,
-		AssignedToContact:  input.AssignedToContact,
-		VendorID:           input.VendorID,
-		AccessInstructions: input.AccessInstructions,
-		ScheduledStart:     input.ScheduledStart,
-		ScheduledEnd:       input.ScheduledEnd,
-		DueDate:            input.DueDate,
-		EstimatedCost:      input.EstimatedCost,
-		ActualCost:         input.ActualCost,
-		PhotoLink:          input.PhotoLink,
-		InvoiceLink:        input.InvoiceLink,
-		InternalNotes:      input.InternalNotes,
-		RecurringRuleID:    input.RecurringRuleID,
-		CreatedAt:          now,
-		UpdatedAt:          now,
+		ID:                  uuid.New(),
+		PropertyID:          input.PropertyID,
+		UnitID:              input.UnitID,
+		Title:               input.Title,
+		Description:         input.Description,
+		Category:            input.Category,
+		Priority:            input.Priority,
+		Status:              input.Status,
+		ReportedBy:          input.ReportedBy,
+		ReportedByContact:   input.ReportedByContact,
+		AssignedTo:          input.AssignedTo,
+		AssignedToContact:   input.AssignedToContact,
+		VendorID:            input.VendorID,
+		AccessInstructions:  input.AccessInstructions,
+		ScheduledStart:      input.ScheduledStart,
+		ScheduledEnd:        input.ScheduledEnd,
+		DueDate:             input.DueDate,
+		EstimatedCost:       input.EstimatedCost,
+		ActualCost:          input.ActualCost,
+		PhotoAttachmentID:   input.PhotoAttachmentID,
+		InvoiceAttachmentID: input.InvoiceAttachmentID,
+		InternalNotes:       input.InternalNotes,
+		RecurringRuleID:     input.RecurringRuleID,
+		CreatedAt:           now,
+		UpdatedAt:           now,
 	}
 	if input.Priority == "" {
 		w.Priority = domain.WorkOrderPriorityMedium
@@ -282,11 +289,17 @@ func (s *WorkOrderService) UpdateWorkOrder(ctx context.Context, id, ownerID uuid
 			w.ActualCost = input.ActualCost
 		}
 	}
-	if input.PhotoLink != nil {
-		w.PhotoLink = *input.PhotoLink
+	if input.PhotoAttachmentIDSet {
+		if err := requireOwnedAttachment(ctx, s.attachmentRepo, ownerID, input.PhotoAttachmentID, "photo_attachment_id"); err != nil {
+			return nil, fmt.Errorf("update work order %s: %w", id, err)
+		}
+		w.PhotoAttachmentID = input.PhotoAttachmentID
 	}
-	if input.InvoiceLink != nil {
-		w.InvoiceLink = *input.InvoiceLink
+	if input.InvoiceAttachmentIDSet {
+		if err := requireOwnedAttachment(ctx, s.attachmentRepo, ownerID, input.InvoiceAttachmentID, "invoice_attachment_id"); err != nil {
+			return nil, fmt.Errorf("update work order %s: %w", id, err)
+		}
+		w.InvoiceAttachmentID = input.InvoiceAttachmentID
 	}
 	if input.InternalNotes != nil {
 		w.InternalNotes = *input.InternalNotes

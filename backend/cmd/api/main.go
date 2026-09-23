@@ -129,14 +129,15 @@ func run() error {
 	vendorRepo := postgres.NewVendorRepository(pool)
 	userRepo := postgres.NewUserRepository(pool)
 	ledgerRepo := postgres.NewLedgerRepository(pool)
+	attachmentRepo := postgres.NewAttachmentRepository(pool)
 
 	// Services: injected with repositories (as domain interfaces) and the logger.
 	propertyService := service.NewPropertyService(propertyRepo, unitRepo, cache, log)
 	unitService := service.NewUnitService(unitRepo, propertyRepo, log)
 	leaseService := service.NewLeaseService(leaseRepo, unitRepo, propertyRepo, log)
-	workOrderService := service.NewWorkOrderService(workOrderRepo, unitRepo, propertyRepo, vendorRepo, log)
+	workOrderService := service.NewWorkOrderService(workOrderRepo, unitRepo, propertyRepo, vendorRepo, attachmentRepo, log)
 	maintenanceRuleService := service.NewMaintenanceRuleService(maintenanceRuleRepo, workOrderRepo, unitRepo, propertyRepo, log)
-	vendorService := service.NewVendorService(vendorRepo, propertyRepo, log)
+	vendorService := service.NewVendorService(vendorRepo, propertyRepo, attachmentRepo, log)
 	authService := service.NewAuthService(userRepo, cache, cfg.JWTAccessSecret, cfg.JWTRefreshSecret, cfg.JWTAccessTTL, cfg.JWTRefreshTTL)
 
 	// Object storage is optional: unconfigured, uploads answer 503 and the
@@ -160,7 +161,7 @@ func run() error {
 	} else {
 		log.Warn("S3_ENDPOINT not set; file uploads are disabled")
 	}
-	attachmentService := service.NewAttachmentService(postgres.NewAttachmentRepository(pool), fileStorage, log)
+	attachmentService := service.NewAttachmentService(attachmentRepo, fileStorage, log)
 
 	ledgerService := service.NewLedgerService(ledgerRepo, leaseRepo, unitRepo, propertyRepo, log)
 	rentRollService := service.NewRentRollService(ledgerRepo, log)

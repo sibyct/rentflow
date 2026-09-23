@@ -78,8 +78,8 @@ type Vendor struct {
 	InsuranceExpiry     *time.Time
 	LicenseNumber       string
 	LicenseExpiry       *time.Time
-	COILink             string
-	TaxDocLink          string
+	COIAttachmentID     *uuid.UUID
+	TaxDocAttachmentID  *uuid.UUID
 	RateType            *VendorRateType
 	RateAmount          *float64
 	PaymentTerms        *VendorPaymentTerms
@@ -119,8 +119,8 @@ type CreateVendorInput struct {
 	InsuranceExpiry     *time.Time
 	LicenseNumber       string
 	LicenseExpiry       *time.Time
-	COILink             string
-	TaxDocLink          string
+	COIAttachmentID     *uuid.UUID
+	TaxDocAttachmentID  *uuid.UUID
 	RateType            *VendorRateType
 	RateAmount          *float64
 	PaymentTerms        *VendorPaymentTerms
@@ -133,25 +133,27 @@ type CreateVendorInput struct {
 // the same nil-vs-empty distinction CoResidents/Amenities already use
 // elsewhere in this codebase.
 type UpdateVendorInput struct {
-	CompanyName         *string
-	Categories          []WorkOrderCategory
-	ContactPerson       *string
-	Phone               *string
-	Email               *string
-	Address             *string
-	ServesAllProperties *bool
-	PropertiesServed    []uuid.UUID
-	PropertiesServedSet bool
-	InsuranceExpiry     *time.Time
-	LicenseNumber       *string
-	LicenseExpiry       *time.Time
-	COILink             *string
-	TaxDocLink          *string
-	RateType            *VendorRateType
-	RateAmount          *float64
-	PaymentTerms        *VendorPaymentTerms
-	InternalNotes       *string
-	Active              *bool
+	CompanyName           *string
+	Categories            []WorkOrderCategory
+	ContactPerson         *string
+	Phone                 *string
+	Email                 *string
+	Address               *string
+	ServesAllProperties   *bool
+	PropertiesServed      []uuid.UUID
+	PropertiesServedSet   bool
+	InsuranceExpiry       *time.Time
+	LicenseNumber         *string
+	LicenseExpiry         *time.Time
+	COIAttachmentID       *uuid.UUID
+	COIAttachmentIDSet    bool // COIAttachmentID is itself nullable, so "remove the file" needs its own flag
+	TaxDocAttachmentID    *uuid.UUID
+	TaxDocAttachmentIDSet bool // same as COIAttachmentIDSet, for the tax document
+	RateType              *VendorRateType
+	RateAmount            *float64
+	PaymentTerms          *VendorPaymentTerms
+	InternalNotes         *string
+	Active                *bool
 }
 
 type VendorSortKey string

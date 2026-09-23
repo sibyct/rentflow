@@ -13,26 +13,26 @@ const workOrderDateLayout = "2006-01-02"
 const workOrderDateTimeLayout = time.RFC3339
 
 type CreateWorkOrderRequest struct {
-	UnitID             *string  `json:"unit_id" validate:"omitempty,uuid4"`
-	Title              string   `json:"title" validate:"required,min=1,max=200,noctrl"`
-	Description        string   `json:"description" validate:"omitempty,max=4000,noctrl"`
-	Category           string   `json:"category" validate:"required,oneof=plumbing electrical hvac appliance pest_control general other"`
-	Priority           string   `json:"priority" validate:"omitempty,oneof=low medium high emergency"`
-	Status             string   `json:"status" validate:"omitempty,oneof=new assigned in_progress on_hold completed cancelled"`
-	ReportedBy         string   `json:"reported_by" validate:"omitempty,max=200,noctrl"`
-	ReportedByContact  string   `json:"reported_by_contact" validate:"omitempty,max=200,noctrl"`
-	AssignedTo         string   `json:"assigned_to" validate:"omitempty,max=200,noctrl"`
-	AssignedToContact  string   `json:"assigned_to_contact" validate:"omitempty,max=200,noctrl"`
-	VendorID           *string  `json:"vendor_id" validate:"omitempty,uuid4"`
-	AccessInstructions string   `json:"access_instructions" validate:"omitempty,max=1000,noctrl"`
-	ScheduledStart     string   `json:"scheduled_start" validate:"omitempty,datetime=2006-01-02T15:04:05Z07:00"`
-	ScheduledEnd       string   `json:"scheduled_end" validate:"omitempty,datetime=2006-01-02T15:04:05Z07:00"`
-	DueDate            string   `json:"due_date" validate:"omitempty,datetime=2006-01-02"`
-	EstimatedCost      *float64 `json:"estimated_cost" validate:"omitempty,min=0"`
-	ActualCost         *float64 `json:"actual_cost" validate:"omitempty,min=0"`
-	PhotoLink          string   `json:"photo_link" validate:"omitempty,max=500,noctrl"`
-	InvoiceLink        string   `json:"invoice_link" validate:"omitempty,max=500,noctrl"`
-	InternalNotes      string   `json:"internal_notes" validate:"omitempty,max=2000,noctrl"`
+	UnitID              *string  `json:"unit_id" validate:"omitempty,uuid4"`
+	Title               string   `json:"title" validate:"required,min=1,max=200,noctrl"`
+	Description         string   `json:"description" validate:"omitempty,max=4000,noctrl"`
+	Category            string   `json:"category" validate:"required,oneof=plumbing electrical hvac appliance pest_control general other"`
+	Priority            string   `json:"priority" validate:"omitempty,oneof=low medium high emergency"`
+	Status              string   `json:"status" validate:"omitempty,oneof=new assigned in_progress on_hold completed cancelled"`
+	ReportedBy          string   `json:"reported_by" validate:"omitempty,max=200,noctrl"`
+	ReportedByContact   string   `json:"reported_by_contact" validate:"omitempty,max=200,noctrl"`
+	AssignedTo          string   `json:"assigned_to" validate:"omitempty,max=200,noctrl"`
+	AssignedToContact   string   `json:"assigned_to_contact" validate:"omitempty,max=200,noctrl"`
+	VendorID            *string  `json:"vendor_id" validate:"omitempty,uuid4"`
+	AccessInstructions  string   `json:"access_instructions" validate:"omitempty,max=1000,noctrl"`
+	ScheduledStart      string   `json:"scheduled_start" validate:"omitempty,datetime=2006-01-02T15:04:05Z07:00"`
+	ScheduledEnd        string   `json:"scheduled_end" validate:"omitempty,datetime=2006-01-02T15:04:05Z07:00"`
+	DueDate             string   `json:"due_date" validate:"omitempty,datetime=2006-01-02"`
+	EstimatedCost       *float64 `json:"estimated_cost" validate:"omitempty,min=0"`
+	ActualCost          *float64 `json:"actual_cost" validate:"omitempty,min=0"`
+	PhotoAttachmentID   string   `json:"photo_attachment_id" validate:"omitempty,uuid4"`
+	InvoiceAttachmentID string   `json:"invoice_attachment_id" validate:"omitempty,uuid4"`
+	InternalNotes       string   `json:"internal_notes" validate:"omitempty,max=2000,noctrl"`
 }
 
 func (r *CreateWorkOrderRequest) Sanitize() {
@@ -43,8 +43,6 @@ func (r *CreateWorkOrderRequest) Sanitize() {
 	r.AssignedTo = sanitizeString(r.AssignedTo)
 	r.AssignedToContact = sanitizeString(r.AssignedToContact)
 	r.AccessInstructions = sanitizeString(r.AccessInstructions)
-	r.PhotoLink = sanitizeString(r.PhotoLink)
-	r.InvoiceLink = sanitizeString(r.InvoiceLink)
 	r.InternalNotes = sanitizeString(r.InternalNotes)
 }
 
@@ -66,8 +64,6 @@ func (r CreateWorkOrderRequest) ToDomain(propertyID uuid.UUID) (domain.CreateWor
 		AccessInstructions: r.AccessInstructions,
 		EstimatedCost:      r.EstimatedCost,
 		ActualCost:         r.ActualCost,
-		PhotoLink:          r.PhotoLink,
-		InvoiceLink:        r.InvoiceLink,
 		InternalNotes:      r.InternalNotes,
 	}
 
@@ -84,6 +80,20 @@ func (r CreateWorkOrderRequest) ToDomain(propertyID uuid.UUID) (domain.CreateWor
 			return domain.CreateWorkOrderInput{}, fmt.Errorf("vendor_id: %w", err)
 		}
 		input.VendorID = &id
+	}
+	if r.PhotoAttachmentID != "" {
+		id, err := uuid.Parse(r.PhotoAttachmentID)
+		if err != nil {
+			return domain.CreateWorkOrderInput{}, fmt.Errorf("photo_attachment_id: %w", err)
+		}
+		input.PhotoAttachmentID = &id
+	}
+	if r.InvoiceAttachmentID != "" {
+		id, err := uuid.Parse(r.InvoiceAttachmentID)
+		if err != nil {
+			return domain.CreateWorkOrderInput{}, fmt.Errorf("invoice_attachment_id: %w", err)
+		}
+		input.InvoiceAttachmentID = &id
 	}
 
 	var err error
@@ -127,9 +137,11 @@ type UpdateWorkOrderRequest struct {
 	DueDate            *string  `json:"due_date" validate:"omitempty,datetime=2006-01-02"`
 	EstimatedCost      *float64 `json:"estimated_cost" validate:"omitempty,min=0"`
 	ActualCost         *float64 `json:"actual_cost" validate:"omitempty,min=0"`
-	PhotoLink          *string  `json:"photo_link" validate:"omitempty,max=500,noctrl"`
-	InvoiceLink        *string  `json:"invoice_link" validate:"omitempty,max=500,noctrl"`
-	InternalNotes      *string  `json:"internal_notes" validate:"omitempty,max=2000,noctrl"`
+	// PhotoAttachmentID/InvoiceAttachmentID use the same empty-string-
+	// means-"clear" sentinel as VendorID above.
+	PhotoAttachmentID   *string `json:"photo_attachment_id"`
+	InvoiceAttachmentID *string `json:"invoice_attachment_id"`
+	InternalNotes       *string `json:"internal_notes" validate:"omitempty,max=2000,noctrl"`
 }
 
 func (r *UpdateWorkOrderRequest) Sanitize() {
@@ -145,8 +157,6 @@ func (r *UpdateWorkOrderRequest) Sanitize() {
 	trim(r.AssignedTo)
 	trim(r.AssignedToContact)
 	trim(r.AccessInstructions)
-	trim(r.PhotoLink)
-	trim(r.InvoiceLink)
 	trim(r.InternalNotes)
 }
 
@@ -162,8 +172,6 @@ func (r UpdateWorkOrderRequest) ToDomain() (domain.UpdateWorkOrderInput, error) 
 		AccessInstructions: r.AccessInstructions,
 		EstimatedCost:      r.EstimatedCost,
 		ActualCost:         r.ActualCost,
-		PhotoLink:          r.PhotoLink,
-		InvoiceLink:        r.InvoiceLink,
 		InternalNotes:      r.InternalNotes,
 	}
 	if r.VendorID != nil {
@@ -174,6 +182,26 @@ func (r UpdateWorkOrderRequest) ToDomain() (domain.UpdateWorkOrderInput, error) 
 				return domain.UpdateWorkOrderInput{}, fmt.Errorf("vendor_id: %w", err)
 			}
 			input.VendorID = &id
+		}
+	}
+	if r.PhotoAttachmentID != nil {
+		input.PhotoAttachmentIDSet = true
+		if *r.PhotoAttachmentID != "" {
+			id, err := uuid.Parse(*r.PhotoAttachmentID)
+			if err != nil {
+				return domain.UpdateWorkOrderInput{}, fmt.Errorf("photo_attachment_id: %w", err)
+			}
+			input.PhotoAttachmentID = &id
+		}
+	}
+	if r.InvoiceAttachmentID != nil {
+		input.InvoiceAttachmentIDSet = true
+		if *r.InvoiceAttachmentID != "" {
+			id, err := uuid.Parse(*r.InvoiceAttachmentID)
+			if err != nil {
+				return domain.UpdateWorkOrderInput{}, fmt.Errorf("invoice_attachment_id: %w", err)
+			}
+			input.InvoiceAttachmentID = &id
 		}
 	}
 	if r.Category != nil {
@@ -283,34 +311,34 @@ func parseUUIDs(ss []string) ([]uuid.UUID, error) {
 }
 
 type WorkOrderResponse struct {
-	ID                 string   `json:"id"`
-	PropertyID         string   `json:"property_id"`
-	UnitID             string   `json:"unit_id,omitempty"`
-	Title              string   `json:"title"`
-	Description        string   `json:"description,omitempty"`
-	Category           string   `json:"category"`
-	Priority           string   `json:"priority"`
-	Status             string   `json:"status"`
-	IsOverdue          bool     `json:"is_overdue"`
-	ReportedBy         string   `json:"reported_by,omitempty"`
-	ReportedByContact  string   `json:"reported_by_contact,omitempty"`
-	AssignedTo         string   `json:"assigned_to,omitempty"`
-	AssignedToContact  string   `json:"assigned_to_contact,omitempty"`
-	VendorID           string   `json:"vendor_id,omitempty"`
-	Rating             *int     `json:"rating,omitempty"`
-	AccessInstructions string   `json:"access_instructions,omitempty"`
-	ScheduledStart     string   `json:"scheduled_start,omitempty"`
-	ScheduledEnd       string   `json:"scheduled_end,omitempty"`
-	DueDate            string   `json:"due_date,omitempty"`
-	EstimatedCost      *float64 `json:"estimated_cost,omitempty"`
-	ActualCost         *float64 `json:"actual_cost,omitempty"`
-	PhotoLink          string   `json:"photo_link,omitempty"`
-	InvoiceLink        string   `json:"invoice_link,omitempty"`
-	InternalNotes      string   `json:"internal_notes,omitempty"`
-	RecurringRuleID    string   `json:"recurring_rule_id,omitempty"`
-	CompletedAt        string   `json:"completed_at,omitempty"`
-	CreatedAt          string   `json:"created_at"`
-	UpdatedAt          string   `json:"updated_at"`
+	ID                  string   `json:"id"`
+	PropertyID          string   `json:"property_id"`
+	UnitID              string   `json:"unit_id,omitempty"`
+	Title               string   `json:"title"`
+	Description         string   `json:"description,omitempty"`
+	Category            string   `json:"category"`
+	Priority            string   `json:"priority"`
+	Status              string   `json:"status"`
+	IsOverdue           bool     `json:"is_overdue"`
+	ReportedBy          string   `json:"reported_by,omitempty"`
+	ReportedByContact   string   `json:"reported_by_contact,omitempty"`
+	AssignedTo          string   `json:"assigned_to,omitempty"`
+	AssignedToContact   string   `json:"assigned_to_contact,omitempty"`
+	VendorID            string   `json:"vendor_id,omitempty"`
+	Rating              *int     `json:"rating,omitempty"`
+	AccessInstructions  string   `json:"access_instructions,omitempty"`
+	ScheduledStart      string   `json:"scheduled_start,omitempty"`
+	ScheduledEnd        string   `json:"scheduled_end,omitempty"`
+	DueDate             string   `json:"due_date,omitempty"`
+	EstimatedCost       *float64 `json:"estimated_cost,omitempty"`
+	ActualCost          *float64 `json:"actual_cost,omitempty"`
+	PhotoAttachmentID   string   `json:"photo_attachment_id,omitempty"`
+	InvoiceAttachmentID string   `json:"invoice_attachment_id,omitempty"`
+	InternalNotes       string   `json:"internal_notes,omitempty"`
+	RecurringRuleID     string   `json:"recurring_rule_id,omitempty"`
+	CompletedAt         string   `json:"completed_at,omitempty"`
+	CreatedAt           string   `json:"created_at"`
+	UpdatedAt           string   `json:"updated_at"`
 }
 
 func NewWorkOrderResponse(w *domain.WorkOrder) WorkOrderResponse {
@@ -331,8 +359,6 @@ func NewWorkOrderResponse(w *domain.WorkOrder) WorkOrderResponse {
 		AccessInstructions: w.AccessInstructions,
 		EstimatedCost:      w.EstimatedCost,
 		ActualCost:         w.ActualCost,
-		PhotoLink:          w.PhotoLink,
-		InvoiceLink:        w.InvoiceLink,
 		InternalNotes:      w.InternalNotes,
 		CreatedAt:          w.CreatedAt.Format(time.RFC3339),
 		UpdatedAt:          w.UpdatedAt.Format(time.RFC3339),
@@ -342,6 +368,12 @@ func NewWorkOrderResponse(w *domain.WorkOrder) WorkOrderResponse {
 	}
 	if w.VendorID != nil {
 		resp.VendorID = w.VendorID.String()
+	}
+	if w.PhotoAttachmentID != nil {
+		resp.PhotoAttachmentID = w.PhotoAttachmentID.String()
+	}
+	if w.InvoiceAttachmentID != nil {
+		resp.InvoiceAttachmentID = w.InvoiceAttachmentID.String()
 	}
 	if w.ScheduledStart != nil {
 		resp.ScheduledStart = w.ScheduledStart.Format(workOrderDateTimeLayout)

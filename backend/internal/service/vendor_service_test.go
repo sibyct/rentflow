@@ -13,12 +13,65 @@ import (
 
 func setupVendorTest(t *testing.T) (*service.VendorService, *fakeVendorRepository, *fakePropertyRepository, uuid.UUID) {
 	t.Helper()
+	svc, vendorRepo, propertyRepo, _, ownerID := setupVendorTestWithAttachments(t)
+	return svc, vendorRepo, propertyRepo, ownerID
+}
+
+// setupVendorTestWithAttachments is setupVendorTest plus the fake
+// domain.AttachmentRepository, for tests that need to seed an
+// attachment to link a COI/tax document to.
+func setupVendorTestWithAttachments(t *testing.T) (*service.VendorService, *fakeVendorRepository, *fakePropertyRepository, *fakeAttachmentRepository, uuid.UUID) {
+	t.Helper()
 	vendorRepo := newFakeVendorRepository()
 	propertyRepo := newFakePropertyRepository()
-	svc := service.NewVendorService(vendorRepo, propertyRepo, noopLogger())
+	attachmentRepo := newFakeAttachmentRepository()
+	svc := service.NewVendorService(vendorRepo, propertyRepo, attachmentRepo, noopLogger())
 
 	ownerID := uuid.New()
-	return svc, vendorRepo, propertyRepo, ownerID
+	return svc, vendorRepo, propertyRepo, attachmentRepo, ownerID
+}
+
+// fakeAttachmentRepository is an in-memory stand-in for
+// domain.AttachmentRepository, shared by the work order and vendor
+// tests that validate a *_attachment_id field.
+type fakeAttachmentRepository struct {
+	attachments map[uuid.UUID]*domain.Attachment
+}
+
+func newFakeAttachmentRepository() *fakeAttachmentRepository {
+	return &fakeAttachmentRepository{attachments: make(map[uuid.UUID]*domain.Attachment)}
+}
+
+func (f *fakeAttachmentRepository) Create(_ context.Context, a *domain.Attachment) error {
+	f.attachments[a.ID] = a
+	return nil
+}
+
+func (f *fakeAttachmentRepository) GetByID(_ context.Context, id uuid.UUID) (*domain.Attachment, error) {
+	a, ok := f.attachments[id]
+	if !ok {
+		return nil, domain.ErrNotFound
+	}
+	return a, nil
+}
+
+func (f *fakeAttachmentRepository) MarkReady(_ context.Context, id uuid.UUID, sizeBytes int64) error {
+	a, ok := f.attachments[id]
+	if !ok {
+		return domain.ErrNotFound
+	}
+	a.Status = domain.AttachmentStatusReady
+	a.SizeBytes = sizeBytes
+	return nil
+}
+
+// newFakeReadyAttachment seeds an attachment owned by ownerID and
+// already 'ready' — the state a real upload is in by the time its id
+// reaches a create/update request.
+func newFakeReadyAttachment(repo *fakeAttachmentRepository, ownerID uuid.UUID) uuid.UUID {
+	id := uuid.New()
+	repo.attachments[id] = &domain.Attachment{ID: id, OwnerID: ownerID, Filename: "file.jpg", ContentType: "image/jpeg", Status: domain.AttachmentStatusReady}
+	return id
 }
 
 func validCreateVendorInput() domain.CreateVendorInput {
@@ -289,6 +342,55 @@ func TestVendorService_GetPropertiesServed(t *testing.T) {
 		_, err := svc.GetPropertiesServed(context.Background(), v.ID, ownerID)
 		if !errors.Is(err, domain.ErrNotFound) {
 			t.Fatalf("GetPropertiesServed() error = %v, want domain.ErrNotFound", err)
+		}
+	})
+}
+
+func TestVendorService_AttachmentFields(t *testing.T) {
+	t.Run("create accepts an owned, ready attachment for the COI", func(t *testing.T) {
+		svc, _, _, attachmentRepo, ownerID := setupVendorTestWithAttachments(t)
+		coiID := newFakeReadyAttachment(attachmentRepo, ownerID)
+
+		input := validCreateVendorInput()
+		input.COIAttachmentID = &coiID
+		got, err := svc.CreateVendor(context.Background(), ownerID, input)
+		if err != nil {
+			t.Fatalf("CreateVendor() unexpected error = %v", err)
+		}
+		if got.COIAttachmentID == nil || *got.COIAttachmentID != coiID {
+			t.Errorf("CreateVendor() coi_attachment_id = %v, want %v", got.COIAttachmentID, coiID)
+		}
+	})
+
+	t.Run("create rejects an attachment owned by someone else", func(t *testing.T) {
+		svc, _, _, attachmentRepo, ownerID := setupVendorTestWithAttachments(t)
+		coiID := newFakeReadyAttachment(attachmentRepo, uuid.New())
+
+		input := validCreateVendorInput()
+		input.COIAttachmentID = &coiID
+		_, err := svc.CreateVendor(context.Background(), ownerID, input)
+
+		var verrs domain.ValidationErrors
+		if !errors.As(err, &verrs) {
+			t.Fatalf("CreateVendor() error = %v, want domain.ValidationErrors", err)
+		}
+	})
+
+	t.Run("update can clear a previously set tax document", func(t *testing.T) {
+		svc, vendorRepo, _, attachmentRepo, ownerID := setupVendorTestWithAttachments(t)
+		taxDocID := newFakeReadyAttachment(attachmentRepo, ownerID)
+		v := &domain.Vendor{
+			ID: uuid.New(), OwnerID: ownerID, CompanyName: "Ace Plumbing",
+			Categories: []domain.WorkOrderCategory{domain.WorkOrderCategoryPlumbing}, TaxDocAttachmentID: &taxDocID,
+		}
+		vendorRepo.vendors[v.ID] = v
+
+		got, err := svc.UpdateVendor(context.Background(), v.ID, ownerID, domain.UpdateVendorInput{TaxDocAttachmentIDSet: true})
+		if err != nil {
+			t.Fatalf("UpdateVendor() unexpected error = %v", err)
+		}
+		if got.TaxDocAttachmentID != nil {
+			t.Errorf("UpdateVendor() tax_doc_attachment_id = %v, want nil", got.TaxDocAttachmentID)
 		}
 	})
 }

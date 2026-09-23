@@ -271,14 +271,15 @@ func (f *fakeVendorRepository) GetSpendSummary(_ context.Context, _ uuid.UUID) (
 }
 
 type workOrderTestFixture struct {
-	svc           *service.WorkOrderService
-	workOrderRepo *fakeWorkOrderRepository
-	propertyRepo  *fakePropertyRepository
-	unitRepo      *fakeUnitRepository
-	vendorRepo    *fakeVendorRepository
-	ownerID       uuid.UUID
-	property      *domain.Property
-	unit          *domain.Unit
+	svc            *service.WorkOrderService
+	workOrderRepo  *fakeWorkOrderRepository
+	propertyRepo   *fakePropertyRepository
+	unitRepo       *fakeUnitRepository
+	vendorRepo     *fakeVendorRepository
+	attachmentRepo *fakeAttachmentRepository
+	ownerID        uuid.UUID
+	property       *domain.Property
+	unit           *domain.Unit
 }
 
 func setupWorkOrderTest(t *testing.T) workOrderTestFixture {
@@ -287,7 +288,8 @@ func setupWorkOrderTest(t *testing.T) workOrderTestFixture {
 	unitRepo := newFakeUnitRepository()
 	workOrderRepo := newFakeWorkOrderRepository()
 	vendorRepo := newFakeVendorRepository()
-	svc := service.NewWorkOrderService(workOrderRepo, unitRepo, propertyRepo, vendorRepo, noopLogger())
+	attachmentRepo := newFakeAttachmentRepository()
+	svc := service.NewWorkOrderService(workOrderRepo, unitRepo, propertyRepo, vendorRepo, attachmentRepo, noopLogger())
 
 	ownerID := uuid.New()
 	property := &domain.Property{ID: uuid.New(), Name: "Willow Creek Apartments", Type: domain.PropertyTypeResidentialMultiUnit, AddressLine1: "123 Main St", OwnerID: ownerID}
@@ -298,7 +300,7 @@ func setupWorkOrderTest(t *testing.T) workOrderTestFixture {
 
 	return workOrderTestFixture{
 		svc: svc, workOrderRepo: workOrderRepo, propertyRepo: propertyRepo, unitRepo: unitRepo, vendorRepo: vendorRepo,
-		ownerID: ownerID, property: property, unit: unit,
+		attachmentRepo: attachmentRepo, ownerID: ownerID, property: property, unit: unit,
 	}
 }
 
@@ -421,6 +423,34 @@ func TestWorkOrderService_CreateWorkOrder(t *testing.T) {
 			t.Fatalf("CreateWorkOrder() error = %v, want %v", err, domain.ErrNotFound)
 		}
 	})
+
+	t.Run("an owned, ready photo attachment is accepted", func(t *testing.T) {
+		f := setupWorkOrderTest(t)
+		photoID := newFakeReadyAttachment(f.attachmentRepo, f.ownerID)
+
+		input := validCreateWorkOrderInput(f.property.ID)
+		input.PhotoAttachmentID = &photoID
+		got, err := f.svc.CreateWorkOrder(context.Background(), f.ownerID, input)
+		if err != nil {
+			t.Fatalf("CreateWorkOrder() unexpected error = %v", err)
+		}
+		if got.PhotoAttachmentID == nil || *got.PhotoAttachmentID != photoID {
+			t.Errorf("CreateWorkOrder() photo_attachment_id = %v, want %v", got.PhotoAttachmentID, photoID)
+		}
+	})
+
+	t.Run("an invoice attachment owned by someone else is rejected", func(t *testing.T) {
+		f := setupWorkOrderTest(t)
+		invoiceID := newFakeReadyAttachment(f.attachmentRepo, uuid.New())
+
+		input := validCreateWorkOrderInput(f.property.ID)
+		input.InvoiceAttachmentID = &invoiceID
+		_, err := f.svc.CreateWorkOrder(context.Background(), f.ownerID, input)
+		var verrs domain.ValidationErrors
+		if !errors.As(err, &verrs) || !hasField(verrs, "invoice_attachment_id") {
+			t.Fatalf("CreateWorkOrder() error = %v, want a ValidationErrors failure for field %q", err, "invoice_attachment_id")
+		}
+	})
 }
 
 func TestWorkOrderService_UpdateWorkOrder(t *testing.T) {
@@ -496,6 +526,28 @@ func TestWorkOrderService_UpdateWorkOrder(t *testing.T) {
 		var verrs domain.ValidationErrors
 		if !errors.As(err, &verrs) || !hasField(verrs, "rating") {
 			t.Fatalf("UpdateWorkOrder() error = %v, want a ValidationErrors failure for field %q", err, "rating")
+		}
+	})
+
+	t.Run("photo attachment can be set then cleared", func(t *testing.T) {
+		photoID := newFakeReadyAttachment(f.attachmentRepo, f.ownerID)
+
+		got, err := f.svc.UpdateWorkOrder(context.Background(), created.ID, f.ownerID, domain.UpdateWorkOrderInput{
+			PhotoAttachmentID: &photoID, PhotoAttachmentIDSet: true,
+		})
+		if err != nil {
+			t.Fatalf("UpdateWorkOrder() unexpected error = %v", err)
+		}
+		if got.PhotoAttachmentID == nil || *got.PhotoAttachmentID != photoID {
+			t.Fatalf("UpdateWorkOrder() photo_attachment_id = %v, want %v", got.PhotoAttachmentID, photoID)
+		}
+
+		got, err = f.svc.UpdateWorkOrder(context.Background(), created.ID, f.ownerID, domain.UpdateWorkOrderInput{PhotoAttachmentIDSet: true})
+		if err != nil {
+			t.Fatalf("UpdateWorkOrder() unexpected error = %v", err)
+		}
+		if got.PhotoAttachmentID != nil {
+			t.Errorf("UpdateWorkOrder() photo_attachment_id = %v, want nil after clearing", got.PhotoAttachmentID)
 		}
 	})
 

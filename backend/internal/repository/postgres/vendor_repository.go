@@ -26,7 +26,7 @@ var _ domain.VendorRepository = (*VendorRepository)(nil)
 
 const vendorColumns = `
 	id, owner_id, company_name, categories, contact_person, phone, email, address,
-	serves_all_properties, insurance_expiry, license_number, license_expiry, coi_link, tax_doc_link,
+	serves_all_properties, insurance_expiry, license_number, license_expiry, coi_attachment_id, tax_doc_attachment_id,
 	rate_type, rate_amount, payment_terms, internal_notes, active, created_at, updated_at`
 
 // Create runs inside a transaction when propertiesServed is non-empty,
@@ -45,7 +45,7 @@ func (r *VendorRepository) Create(ctx context.Context, v *domain.Vendor, propert
 
 	if _, err := tx.Exec(ctx, q,
 		v.ID, v.OwnerID, v.CompanyName, categoryArgs(v.Categories), v.ContactPerson, v.Phone, v.Email, v.Address,
-		v.ServesAllProperties, v.InsuranceExpiry, v.LicenseNumber, v.LicenseExpiry, v.COILink, v.TaxDocLink,
+		v.ServesAllProperties, v.InsuranceExpiry, v.LicenseNumber, v.LicenseExpiry, v.COIAttachmentID, v.TaxDocAttachmentID,
 		rateTypeArg(v.RateType), v.RateAmount, paymentTermsArg(v.PaymentTerms), v.InternalNotes, v.Active, v.CreatedAt, v.UpdatedAt,
 	); err != nil {
 		return fmt.Errorf("insert vendor %s: %w", v.ID, err)
@@ -217,14 +217,14 @@ func (r *VendorRepository) Update(ctx context.Context, v *domain.Vendor) error {
 		UPDATE vendors
 		SET company_name = $2, categories = $3, contact_person = $4, phone = $5, email = $6, address = $7,
 			serves_all_properties = $8, insurance_expiry = $9, license_number = $10, license_expiry = $11,
-			coi_link = $12, tax_doc_link = $13, rate_type = $14, rate_amount = $15, payment_terms = $16,
+			coi_attachment_id = $12, tax_doc_attachment_id = $13, rate_type = $14, rate_amount = $15, payment_terms = $16,
 			internal_notes = $17, active = $18, updated_at = $19
 		WHERE id = $1`
 
 	tag, err := r.pool.Exec(ctx, q,
 		v.ID, v.CompanyName, categoryArgs(v.Categories), v.ContactPerson, v.Phone, v.Email, v.Address,
 		v.ServesAllProperties, v.InsuranceExpiry, v.LicenseNumber, v.LicenseExpiry,
-		v.COILink, v.TaxDocLink, rateTypeArg(v.RateType), v.RateAmount, paymentTermsArg(v.PaymentTerms),
+		v.COIAttachmentID, v.TaxDocAttachmentID, rateTypeArg(v.RateType), v.RateAmount, paymentTermsArg(v.PaymentTerms),
 		v.InternalNotes, v.Active, v.UpdatedAt,
 	)
 	if err != nil {
@@ -321,7 +321,7 @@ func (r *VendorRepository) GetSpendSummary(ctx context.Context, vendorID uuid.UU
 func qualifiedVendorColumns(alias string) string {
 	return alias + `.id, ` + alias + `.owner_id, ` + alias + `.company_name, ` + alias + `.categories, ` + alias + `.contact_person, ` +
 		alias + `.phone, ` + alias + `.email, ` + alias + `.address, ` + alias + `.serves_all_properties, ` + alias + `.insurance_expiry, ` +
-		alias + `.license_number, ` + alias + `.license_expiry, ` + alias + `.coi_link, ` + alias + `.tax_doc_link, ` + alias + `.rate_type, ` +
+		alias + `.license_number, ` + alias + `.license_expiry, ` + alias + `.coi_attachment_id, ` + alias + `.tax_doc_attachment_id, ` + alias + `.rate_type, ` +
 		alias + `.rate_amount, ` + alias + `.payment_terms, ` + alias + `.internal_notes, ` + alias + `.active, ` + alias + `.created_at, ` + alias + `.updated_at`
 }
 
@@ -331,17 +331,18 @@ func scanVendor(row rowScanner) (*domain.Vendor, error) {
 	var insuranceExpiry, licenseExpiry sql.NullTime
 	var rateType, paymentTerms sql.NullString
 	var rateAmount sql.NullFloat64
+	var coiAttachmentID, taxDocAttachmentID uuid.NullUUID
 
 	err := row.Scan(
 		&v.ID, &v.OwnerID, &v.CompanyName, &categories, &v.ContactPerson, &v.Phone, &v.Email, &v.Address,
-		&v.ServesAllProperties, &insuranceExpiry, &v.LicenseNumber, &licenseExpiry, &v.COILink, &v.TaxDocLink,
+		&v.ServesAllProperties, &insuranceExpiry, &v.LicenseNumber, &licenseExpiry, &coiAttachmentID, &taxDocAttachmentID,
 		&rateType, &rateAmount, &paymentTerms, &v.InternalNotes, &v.Active, &v.CreatedAt, &v.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err
 	}
 	v.Categories = toCategorySlice(categories)
-	applyVendorNullables(&v, insuranceExpiry, licenseExpiry, rateType, paymentTerms, rateAmount)
+	applyVendorNullables(&v, insuranceExpiry, licenseExpiry, rateType, paymentTerms, rateAmount, coiAttachmentID, taxDocAttachmentID)
 	return &v, nil
 }
 
@@ -352,10 +353,11 @@ func scanVendorWithStats(row rowScanner) (*domain.VendorWithStats, error) {
 	var rateType, paymentTerms sql.NullString
 	var rateAmount sql.NullFloat64
 	var averageRating sql.NullFloat64
+	var coiAttachmentID, taxDocAttachmentID uuid.NullUUID
 
 	err := row.Scan(
 		&v.ID, &v.OwnerID, &v.CompanyName, &categories, &v.ContactPerson, &v.Phone, &v.Email, &v.Address,
-		&v.ServesAllProperties, &insuranceExpiry, &v.LicenseNumber, &licenseExpiry, &v.COILink, &v.TaxDocLink,
+		&v.ServesAllProperties, &insuranceExpiry, &v.LicenseNumber, &licenseExpiry, &coiAttachmentID, &taxDocAttachmentID,
 		&rateType, &rateAmount, &paymentTerms, &v.InternalNotes, &v.Active, &v.CreatedAt, &v.UpdatedAt,
 		&v.OpenWorkOrders, &averageRating, &v.PropertiesServedCount,
 	)
@@ -363,7 +365,7 @@ func scanVendorWithStats(row rowScanner) (*domain.VendorWithStats, error) {
 		return nil, err
 	}
 	v.Categories = toCategorySlice(categories)
-	applyVendorNullables(&v.Vendor, insuranceExpiry, licenseExpiry, rateType, paymentTerms, rateAmount)
+	applyVendorNullables(&v.Vendor, insuranceExpiry, licenseExpiry, rateType, paymentTerms, rateAmount, coiAttachmentID, taxDocAttachmentID)
 	if averageRating.Valid {
 		r := averageRating.Float64
 		v.AverageRating = &r
@@ -397,12 +399,21 @@ func applyVendorNullables(
 	insuranceExpiry, licenseExpiry sql.NullTime,
 	rateType, paymentTerms sql.NullString,
 	rateAmount sql.NullFloat64,
+	coiAttachmentID, taxDocAttachmentID uuid.NullUUID,
 ) {
 	if insuranceExpiry.Valid {
 		v.InsuranceExpiry = &insuranceExpiry.Time
 	}
 	if licenseExpiry.Valid {
 		v.LicenseExpiry = &licenseExpiry.Time
+	}
+	if coiAttachmentID.Valid {
+		id := coiAttachmentID.UUID
+		v.COIAttachmentID = &id
+	}
+	if taxDocAttachmentID.Valid {
+		id := taxDocAttachmentID.UUID
+		v.TaxDocAttachmentID = &id
 	}
 	if rateType.Valid {
 		t := domain.VendorRateType(rateType.String)
