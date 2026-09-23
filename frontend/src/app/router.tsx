@@ -5,6 +5,7 @@ import { ProtectedRoute } from './layout/ProtectedRoute';
 import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
+import { AcceptInvitePage } from './pages/AcceptInvitePage';
 import { DashboardPage } from './pages/DashboardPage';
 import { PropertiesPage } from './pages/PropertiesPage';
 import { PropertyDetailPage } from './pages/PropertyDetailPage';
@@ -19,8 +20,9 @@ import { RentRollPage } from './pages/RentRollPage';
 import { ExpensesPage } from './pages/ExpensesPage';
 import { ChargesPage } from './pages/ChargesPage';
 import { AccountingLayout } from '@/features/accounting';
+import { SettingsPage } from './pages/SettingsPage';
+import { UsersRolesPage } from './pages/UsersRolesPage';
 import { NotFoundPage } from './pages/NotFoundPage';
-import { PlaceholderPage } from '@/shared/components';
 
 export function AppRouter() {
   return (
@@ -30,6 +32,10 @@ export function AppRouter() {
         <Route path="login" element={<LoginPage />} />
         <Route path="register" element={<RegisterPage />} />
         <Route path="forgot-password" element={<ForgotPasswordPage />} />
+        {/* Where a staff invite email links to — a design prototype, see
+            features/settings/types.ts. Pre-auth like the routes above it,
+            so it shares this same split layout rather than the app shell. */}
+        <Route path="accept-invite" element={<AcceptInvitePage />} />
       </Route>
 
       {/* Authenticated app: one ProtectedRoute guarding the whole shell,
@@ -69,9 +75,8 @@ export function AppRouter() {
           <Route path="charges" element={<ChargesPage />} />
         </Route>
 
-        {/* Nav destinations with no real feature yet — see navConfig.tsx
-            and README for how to replace one of these with a real page. */}
-        <Route path="settings" element={<PlaceholderPage label="Settings" />} />
+        <Route path="settings" element={<SettingsPage />} />
+        <Route path="settings/users-roles" element={<UsersRolesPage />} />
 
         <Route path="*" element={<NotFoundPage />} />
       </Route>

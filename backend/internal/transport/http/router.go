@@ -32,6 +32,7 @@ type RouterConfig struct {
 	DepositService       domain.DepositService
 	PropertyOwnerService domain.PropertyOwnerService
 	StatementService     domain.OwnerStatementService
+	StaffService         domain.StaffService
 
 	AuthHandler    *handlers.AuthHandler
 	HealthHandler  *handlers.HealthHandler
@@ -75,6 +76,8 @@ func NewRouter(cfg RouterConfig) http.Handler {
 	depositHandler := handlers.NewDepositHandler(cfg.DepositService)
 	propertyOwnerHandler := handlers.NewPropertyOwnerHandler(cfg.PropertyOwnerService)
 	statementHandler := handlers.NewOwnerStatementHandler(cfg.StatementService)
+	staffHandler := handlers.NewStaffHandler(cfg.StaffService)
+	inviteHandler := handlers.NewInviteHandler(cfg.StaffService)
 
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Route("/auth", func(r chi.Router) {
@@ -82,6 +85,13 @@ func NewRouter(cfg RouterConfig) http.Handler {
 			r.Post("/login", cfg.AuthHandler.Login)
 			r.Post("/refresh", cfg.AuthHandler.Refresh)
 			r.Post("/logout", cfg.AuthHandler.Logout)
+		})
+
+		// Unauthenticated: what a staff invite email links to, reached
+		// before the recipient has a password (see StaffService).
+		r.Route("/invites", func(r chi.Router) {
+			r.Get("/", inviteHandler.Lookup)
+			r.Post("/accept", inviteHandler.Accept)
 		})
 
 		r.Group(func(r chi.Router) {
@@ -239,6 +249,21 @@ func NewRouter(cfg RouterConfig) http.Handler {
 				r.Post("/statements/{id}/send", statementHandler.Send)
 				r.Post("/statements/{id}/mark-sent", statementHandler.MarkSent)
 				r.Post("/statements/{id}/mark-paid", statementHandler.MarkPaid)
+			})
+
+			// Users & roles — restricted to whoever may manage staff on
+			// this account (the root owner, or a staff Admin); see
+			// middleware.RequireAccountAdmin.
+			r.Route("/staff", func(r chi.Router) {
+				r.Use(custommw.RequireAccountAdmin)
+
+				r.Get("/", staffHandler.List)
+				r.Post("/invite", staffHandler.Invite)
+				r.Get("/audit", staffHandler.AuditLog)
+				r.Put("/{id}", staffHandler.Update)
+				r.Post("/{id}/deactivate", staffHandler.Deactivate)
+				r.Post("/{id}/reactivate", staffHandler.Reactivate)
+				r.Post("/{id}/resend-invite", staffHandler.ResendInvite)
 			})
 		})
 	})

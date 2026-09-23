@@ -61,6 +61,22 @@ func RequireRole(roles ...domain.UserRole) func(http.Handler) http.Handler {
 	}
 }
 
+// RequireAccountAdmin restricts a route to whoever may manage staff on
+// this account — the root account owner always, or a staff member with
+// the Admin role (see domain.AuthClaims.CanManageStaff). Unlike
+// RequireRole, this checks the newer per-account staff role, not the
+// legacy coarse UserRole.
+func RequireAccountAdmin(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		claims, ok := ClaimsFromContext(r.Context())
+		if !ok || !claims.CanManageStaff() {
+			response.WriteError(w, r, fmt.Errorf("authorize %s: %w", r.URL.Path, domain.ErrForbidden))
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func ClaimsFromContext(ctx context.Context) (*domain.AuthClaims, bool) {
 	return reqctx.Claims(ctx)
 }
