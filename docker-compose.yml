@@ -38,6 +38,36 @@ services:
       timeout: 5s
       retries: 10
 
+  # S3-compatible object storage for receipts / deposit documents /
+  # statement PDFs. Console at http://localhost:9001 (user "rentflow").
+  # Production uses a real S3-compatible bucket (S3, Tigris, R2) — the API
+  # only ever sees the S3_* variables below. The password has a dev-only
+  # default so an older .env without MINIO_ROOT_PASSWORD keeps working.
+  minio:
+    image: minio/minio:latest
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: rentflow
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-rentflow-dev-minio-secret}
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Catches every outbound email locally (nothing is ever really sent):
+  # SMTP on :1025, inbox UI at http://localhost:8025.
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "127.0.0.1:1025:1025"
+      - "127.0.0.1:8025:8025"
+
   migrate:
     image: migrate/migrate:v4.17.1
     volumes:
@@ -61,7 +91,7 @@ services:
       dockerfile: Dockerfile.dev
     ports:
       - "127.0.0.1:8080:8080"
-    environment:
+    environment: &backend-env # reused as-is by the worker below
       APP_ENV: development
       HTTP_PORT: "8080"
       DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/propertymanagement?sslmode=disable
@@ -76,6 +106,19 @@ services:
       COOKIE_DOMAIN: ""
       COOKIE_SECURE: "false"
       ALLOWED_ORIGINS: http://localhost:5173
+      # The API talks to MinIO over the compose network; the browser
+      # uploads to it via the published port, so presigned URLs must be
+      # signed for localhost:9000.
+      S3_ENDPOINT: http://minio:9000
+      S3_PUBLIC_ENDPOINT: http://localhost:9000
+      S3_BUCKET: rentflow
+      S3_ACCESS_KEY: rentflow
+      S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-rentflow-dev-minio-secret}
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+      SMTP_TLS: none
+      SMTP_FROM: "RentFlow <no-reply@rentflow.local>"
+      PUBLIC_APP_URL: http://localhost:5173
     volumes:
       - ./backend:/app
     depends_on:
@@ -83,8 +126,31 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      minio:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  # Background jobs (daily rent / late fees, recurring expenses, monthly
+  # owner statements) and the email outbox. Same source as the API, run
+  # with `go run` (no hot reload — restart it after backend changes).
+  # Sends through Mailpit: http://localhost:8025.
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    command: ["go", "run", "./cmd/worker"]
+    environment: *backend-env
+    volumes:
+      - ./backend:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
       migrate:
         condition: service_completed_successfully
 
 volumes:
   postgres_data:
+  minio_data:

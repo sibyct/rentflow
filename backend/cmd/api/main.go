@@ -26,6 +26,9 @@ import (
 	"github.com/joho/godotenv"
 
 	"propertymanagement/internal/config"
+	"propertymanagement/internal/domain"
+	"propertymanagement/internal/infra/pdf"
+	"propertymanagement/internal/infra/storage"
 	"propertymanagement/internal/repository/postgres"
 	"propertymanagement/internal/repository/rediscache"
 	"propertymanagement/internal/service"
@@ -125,6 +128,7 @@ func run() error {
 	maintenanceRuleRepo := postgres.NewMaintenanceRuleRepository(pool)
 	vendorRepo := postgres.NewVendorRepository(pool)
 	userRepo := postgres.NewUserRepository(pool)
+	ledgerRepo := postgres.NewLedgerRepository(pool)
 
 	// Services: injected with repositories (as domain interfaces) and the logger.
 	propertyService := service.NewPropertyService(propertyRepo, unitRepo, cache, log)
@@ -134,6 +138,46 @@ func run() error {
 	maintenanceRuleService := service.NewMaintenanceRuleService(maintenanceRuleRepo, workOrderRepo, unitRepo, propertyRepo, log)
 	vendorService := service.NewVendorService(vendorRepo, propertyRepo, log)
 	authService := service.NewAuthService(userRepo, cache, cfg.JWTAccessSecret, cfg.JWTRefreshSecret, cfg.JWTAccessTTL, cfg.JWTRefreshTTL)
+
+	// Object storage is optional: unconfigured, uploads answer 503 and the
+	// rest of the app is unaffected.
+	var fileStorage domain.FileStorage = storage.Noop{}
+	if cfg.StorageEnabled() {
+		s3, err := storage.NewS3(storage.S3Config{
+			Endpoint: cfg.S3Endpoint, PublicEndpoint: cfg.S3PublicEndpoint, Bucket: cfg.S3Bucket,
+			AccessKey: cfg.S3AccessKey, SecretKey: cfg.S3SecretKey, Region: cfg.S3Region,
+		})
+		if err != nil {
+			return fmt.Errorf("configuring object storage: %w", err)
+		}
+		bucketCtx, cancelBucket := context.WithTimeout(ctx, 10*time.Second)
+		if err := s3.EnsureBucket(bucketCtx); err != nil {
+			log.Warn("object storage bucket not ready; uploads will fail until it is", "error", err)
+		}
+		cancelBucket()
+		fileStorage = s3
+		log.Info("object storage configured", "bucket", cfg.S3Bucket)
+	} else {
+		log.Warn("S3_ENDPOINT not set; file uploads are disabled")
+	}
+	attachmentService := service.NewAttachmentService(postgres.NewAttachmentRepository(pool), fileStorage, log)
+
+	ledgerService := service.NewLedgerService(ledgerRepo, leaseRepo, unitRepo, propertyRepo, log)
+	rentRollService := service.NewRentRollService(ledgerRepo, log)
+	expenseService := service.NewExpenseService(ledgerRepo, propertyRepo, unitRepo, vendorRepo, log)
+	chargeService := service.NewChargeService(ledgerRepo, unitRepo, propertyRepo, log)
+	bankAccountService := service.NewBankAccountService(postgres.NewBankAccountRepository(pool), propertyRepo, log)
+	depositService := service.NewDepositService(postgres.NewDepositRepository(pool), ledgerRepo, log)
+	propertyOwnerRepo := postgres.NewPropertyOwnerRepository(pool)
+	propertyOwnerService := service.NewPropertyOwnerService(propertyOwnerRepo, propertyRepo, log)
+	statementService := service.NewOwnerStatementService(
+		postgres.NewOwnerStatementRepository(pool), propertyOwnerRepo, propertyRepo,
+		postgres.NewEmailOutboxRepository(pool), pdf.NewStatementRenderer(), cfg.MailEnabled(), cfg.PublicAppURL, log,
+	)
+	// A completed work order produces its expense, and a lease with a
+	// security deposit gets a tracked deposit record, through these hooks.
+	workOrderService.SetExpenseSyncer(expenseService)
+	leaseService.SetDepositEnsurer(depositService)
 
 	// Handlers: injected with services (as domain interfaces).
 	authHandler := handlers.NewAuthHandler(authService, cfg.JWTAccessTTL, cfg.JWTRefreshTTL, cfg.CookieDomain, cfg.CookieSecure)
@@ -150,6 +194,15 @@ func run() error {
 		WorkOrderService:     workOrderService,
 		RecurringRuleService: maintenanceRuleService,
 		VendorService:        vendorService,
+		LedgerService:        ledgerService,
+		RentRollService:      rentRollService,
+		ExpenseService:       expenseService,
+		ChargeService:        chargeService,
+		AttachmentService:    attachmentService,
+		BankAccountService:   bankAccountService,
+		DepositService:       depositService,
+		PropertyOwnerService: propertyOwnerService,
+		StatementService:     statementService,
 		AuthHandler:          authHandler,
 		HealthHandler:        healthHandler,
 		VersionHandler:       versionHandler,

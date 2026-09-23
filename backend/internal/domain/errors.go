@@ -21,6 +21,13 @@ var (
 	ErrInvalidInput  = errors.New("invalid input")
 	ErrUnauthorized  = errors.New("unauthorized")
 	ErrForbidden     = errors.New("forbidden")
+	// ErrConflict means the request is well-formed but the resource's
+	// current state (or its dependents) forbids it — e.g. deleting a
+	// lease that has ledger history.
+	ErrConflict = errors.New("conflict")
+	// ErrUnavailable means an optional piece of infrastructure this
+	// request needs (object storage, email) isn't configured.
+	ErrUnavailable = errors.New("unavailable")
 )
 
 // ValidationError carries structured detail about exactly one invalid
