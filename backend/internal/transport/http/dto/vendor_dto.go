@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
+
 	"propertymanagement/internal/domain"
 )
 
@@ -21,8 +23,8 @@ type CreateVendorRequest struct {
 	InsuranceExpiry     string   `json:"insurance_expiry" validate:"omitempty,datetime=2006-01-02"`
 	LicenseNumber       string   `json:"license_number" validate:"omitempty,max=100,noctrl"`
 	LicenseExpiry       string   `json:"license_expiry" validate:"omitempty,datetime=2006-01-02"`
-	COILink             string   `json:"coi_link" validate:"omitempty,max=500,noctrl"`
-	TaxDocLink          string   `json:"tax_doc_link" validate:"omitempty,max=500,noctrl"`
+	COIAttachmentID     string   `json:"coi_attachment_id" validate:"omitempty,uuid4"`
+	TaxDocAttachmentID  string   `json:"tax_doc_attachment_id" validate:"omitempty,uuid4"`
 	RateType            string   `json:"rate_type" validate:"omitempty,oneof=hourly flat"`
 	RateAmount          *float64 `json:"rate_amount" validate:"omitempty,min=0"`
 	PaymentTerms        string   `json:"payment_terms" validate:"omitempty,oneof=net_15 net_30 net_45"`
@@ -36,8 +38,6 @@ func (r *CreateVendorRequest) Sanitize() {
 	r.Email = sanitizeString(r.Email)
 	r.Address = sanitizeString(r.Address)
 	r.LicenseNumber = sanitizeString(r.LicenseNumber)
-	r.COILink = sanitizeString(r.COILink)
-	r.TaxDocLink = sanitizeString(r.TaxDocLink)
 	r.InternalNotes = sanitizeString(r.InternalNotes)
 }
 
@@ -51,8 +51,6 @@ func (r CreateVendorRequest) ToDomain() (domain.CreateVendorInput, error) {
 		Address:             r.Address,
 		ServesAllProperties: r.ServesAllProperties,
 		LicenseNumber:       r.LicenseNumber,
-		COILink:             r.COILink,
-		TaxDocLink:          r.TaxDocLink,
 		InternalNotes:       r.InternalNotes,
 	}
 
@@ -61,6 +59,21 @@ func (r CreateVendorRequest) ToDomain() (domain.CreateVendorInput, error) {
 		return domain.CreateVendorInput{}, fmt.Errorf("properties_served: %w", err)
 	}
 	input.PropertiesServed = propertiesServed
+
+	if r.COIAttachmentID != "" {
+		id, err := uuid.Parse(r.COIAttachmentID)
+		if err != nil {
+			return domain.CreateVendorInput{}, fmt.Errorf("coi_attachment_id: %w", err)
+		}
+		input.COIAttachmentID = &id
+	}
+	if r.TaxDocAttachmentID != "" {
+		id, err := uuid.Parse(r.TaxDocAttachmentID)
+		if err != nil {
+			return domain.CreateVendorInput{}, fmt.Errorf("tax_doc_attachment_id: %w", err)
+		}
+		input.TaxDocAttachmentID = &id
+	}
 
 	if r.RateType != "" {
 		t := domain.VendorRateType(r.RateType)
@@ -105,13 +118,15 @@ type UpdateVendorRequest struct {
 	InsuranceExpiry  *string  `json:"insurance_expiry" validate:"omitempty,datetime=2006-01-02"`
 	LicenseNumber    *string  `json:"license_number" validate:"omitempty,max=100,noctrl"`
 	LicenseExpiry    *string  `json:"license_expiry" validate:"omitempty,datetime=2006-01-02"`
-	COILink          *string  `json:"coi_link" validate:"omitempty,max=500,noctrl"`
-	TaxDocLink       *string  `json:"tax_doc_link" validate:"omitempty,max=500,noctrl"`
-	RateType         *string  `json:"rate_type" validate:"omitempty,oneof=hourly flat"`
-	RateAmount       *float64 `json:"rate_amount" validate:"omitempty,min=0"`
-	PaymentTerms     *string  `json:"payment_terms" validate:"omitempty,oneof=net_15 net_30 net_45"`
-	InternalNotes    *string  `json:"internal_notes" validate:"omitempty,max=2000,noctrl"`
-	Active           *bool    `json:"active"`
+	// COIAttachmentID/TaxDocAttachmentID use the same empty-string-means-
+	// "clear" sentinel as UpdateWorkOrderRequest.PhotoAttachmentID.
+	COIAttachmentID    *string  `json:"coi_attachment_id"`
+	TaxDocAttachmentID *string  `json:"tax_doc_attachment_id"`
+	RateType           *string  `json:"rate_type" validate:"omitempty,oneof=hourly flat"`
+	RateAmount         *float64 `json:"rate_amount" validate:"omitempty,min=0"`
+	PaymentTerms       *string  `json:"payment_terms" validate:"omitempty,oneof=net_15 net_30 net_45"`
+	InternalNotes      *string  `json:"internal_notes" validate:"omitempty,max=2000,noctrl"`
+	Active             *bool    `json:"active"`
 }
 
 func (r *UpdateVendorRequest) Sanitize() {
@@ -126,8 +141,6 @@ func (r *UpdateVendorRequest) Sanitize() {
 	trim(r.Email)
 	trim(r.Address)
 	trim(r.LicenseNumber)
-	trim(r.COILink)
-	trim(r.TaxDocLink)
 	trim(r.InternalNotes)
 }
 
@@ -141,8 +154,6 @@ func (r UpdateVendorRequest) ToDomain() (domain.UpdateVendorInput, error) {
 		ServesAllProperties: r.ServesAllProperties,
 		RateAmount:          r.RateAmount,
 		LicenseNumber:       r.LicenseNumber,
-		COILink:             r.COILink,
-		TaxDocLink:          r.TaxDocLink,
 		InternalNotes:       r.InternalNotes,
 		Active:              r.Active,
 	}
@@ -156,6 +167,26 @@ func (r UpdateVendorRequest) ToDomain() (domain.UpdateVendorInput, error) {
 		}
 		input.PropertiesServed = ids
 		input.PropertiesServedSet = true
+	}
+	if r.COIAttachmentID != nil {
+		input.COIAttachmentIDSet = true
+		if *r.COIAttachmentID != "" {
+			id, err := uuid.Parse(*r.COIAttachmentID)
+			if err != nil {
+				return domain.UpdateVendorInput{}, fmt.Errorf("coi_attachment_id: %w", err)
+			}
+			input.COIAttachmentID = &id
+		}
+	}
+	if r.TaxDocAttachmentID != nil {
+		input.TaxDocAttachmentIDSet = true
+		if *r.TaxDocAttachmentID != "" {
+			id, err := uuid.Parse(*r.TaxDocAttachmentID)
+			if err != nil {
+				return domain.UpdateVendorInput{}, fmt.Errorf("tax_doc_attachment_id: %w", err)
+			}
+			input.TaxDocAttachmentID = &id
+		}
 	}
 	if r.RateType != nil {
 		t := domain.VendorRateType(*r.RateType)
@@ -190,8 +221,8 @@ type VendorResponse struct {
 	InsuranceStatus     string   `json:"insurance_status"`
 	LicenseNumber       string   `json:"license_number,omitempty"`
 	LicenseExpiry       string   `json:"license_expiry,omitempty"`
-	COILink             string   `json:"coi_link,omitempty"`
-	TaxDocLink          string   `json:"tax_doc_link,omitempty"`
+	COIAttachmentID     string   `json:"coi_attachment_id,omitempty"`
+	TaxDocAttachmentID  string   `json:"tax_doc_attachment_id,omitempty"`
 	RateType            string   `json:"rate_type,omitempty"`
 	RateAmount          *float64 `json:"rate_amount,omitempty"`
 	PaymentTerms        string   `json:"payment_terms,omitempty"`
@@ -218,8 +249,6 @@ func NewVendorResponse(v *domain.Vendor) VendorResponse {
 		ServesAllProperties: v.ServesAllProperties,
 		InsuranceStatus:     string(v.InsuranceStatus(time.Now().UTC())),
 		LicenseNumber:       v.LicenseNumber,
-		COILink:             v.COILink,
-		TaxDocLink:          v.TaxDocLink,
 		RateAmount:          v.RateAmount,
 		InternalNotes:       v.InternalNotes,
 		Active:              v.Active,
@@ -231,6 +260,12 @@ func NewVendorResponse(v *domain.Vendor) VendorResponse {
 	}
 	if v.LicenseExpiry != nil {
 		resp.LicenseExpiry = v.LicenseExpiry.Format(vendorDateLayout)
+	}
+	if v.COIAttachmentID != nil {
+		resp.COIAttachmentID = v.COIAttachmentID.String()
+	}
+	if v.TaxDocAttachmentID != nil {
+		resp.TaxDocAttachmentID = v.TaxDocAttachmentID.String()
 	}
 	if v.RateType != nil {
 		resp.RateType = string(*v.RateType)

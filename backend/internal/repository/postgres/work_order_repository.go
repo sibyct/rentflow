@@ -27,7 +27,7 @@ var _ domain.WorkOrderRepository = (*WorkOrderRepository)(nil)
 const workOrderColumns = `
 	id, property_id, unit_id, title, description, category, priority, status,
 	reported_by, reported_by_contact, assigned_to, assigned_to_contact, vendor_id, rating, access_instructions,
-	scheduled_start, scheduled_end, due_date, estimated_cost, actual_cost, photo_link, invoice_link,
+	scheduled_start, scheduled_end, due_date, estimated_cost, actual_cost, photo_attachment_id, invoice_attachment_id,
 	internal_notes, recurring_rule_id, completed_at, created_at, updated_at`
 
 // qualifiedWorkOrderColumns is workOrderColumns aliased to "w." for
@@ -37,7 +37,7 @@ const workOrderColumns = `
 const qualifiedWorkOrderColumns = `
 	w.id, w.property_id, w.unit_id, w.title, w.description, w.category, w.priority, w.status,
 	w.reported_by, w.reported_by_contact, w.assigned_to, w.assigned_to_contact, w.vendor_id, w.rating, w.access_instructions,
-	w.scheduled_start, w.scheduled_end, w.due_date, w.estimated_cost, w.actual_cost, w.photo_link, w.invoice_link,
+	w.scheduled_start, w.scheduled_end, w.due_date, w.estimated_cost, w.actual_cost, w.photo_attachment_id, w.invoice_attachment_id,
 	w.internal_notes, w.recurring_rule_id, w.completed_at, w.created_at, w.updated_at`
 
 func (r *WorkOrderRepository) Create(ctx context.Context, w *domain.WorkOrder) error {
@@ -48,7 +48,7 @@ func (r *WorkOrderRepository) Create(ctx context.Context, w *domain.WorkOrder) e
 	_, err := r.pool.Exec(ctx, q,
 		w.ID, w.PropertyID, w.UnitID, w.Title, w.Description, w.Category, w.Priority, w.Status,
 		w.ReportedBy, w.ReportedByContact, w.AssignedTo, w.AssignedToContact, w.VendorID, w.Rating, w.AccessInstructions,
-		w.ScheduledStart, w.ScheduledEnd, w.DueDate, w.EstimatedCost, w.ActualCost, w.PhotoLink, w.InvoiceLink,
+		w.ScheduledStart, w.ScheduledEnd, w.DueDate, w.EstimatedCost, w.ActualCost, w.PhotoAttachmentID, w.InvoiceAttachmentID,
 		w.InternalNotes, w.RecurringRuleID, w.CompletedAt, w.CreatedAt, w.UpdatedAt,
 	)
 	if err != nil {
@@ -186,7 +186,7 @@ func (r *WorkOrderRepository) Update(ctx context.Context, w *domain.WorkOrder) e
 		SET unit_id = $2, title = $3, description = $4, category = $5, priority = $6, status = $7,
 			reported_by = $8, reported_by_contact = $9, assigned_to = $10, assigned_to_contact = $11,
 			vendor_id = $12, rating = $13, access_instructions = $14, scheduled_start = $15, scheduled_end = $16,
-			due_date = $17, estimated_cost = $18, actual_cost = $19, photo_link = $20, invoice_link = $21,
+			due_date = $17, estimated_cost = $18, actual_cost = $19, photo_attachment_id = $20, invoice_attachment_id = $21,
 			internal_notes = $22, completed_at = $23, updated_at = $24
 		WHERE id = $1`
 
@@ -194,7 +194,7 @@ func (r *WorkOrderRepository) Update(ctx context.Context, w *domain.WorkOrder) e
 		w.ID, w.UnitID, w.Title, w.Description, w.Category, w.Priority, w.Status,
 		w.ReportedBy, w.ReportedByContact, w.AssignedTo, w.AssignedToContact,
 		w.VendorID, w.Rating, w.AccessInstructions, w.ScheduledStart, w.ScheduledEnd, w.DueDate,
-		w.EstimatedCost, w.ActualCost, w.PhotoLink, w.InvoiceLink,
+		w.EstimatedCost, w.ActualCost, w.PhotoAttachmentID, w.InvoiceAttachmentID,
 		w.InternalNotes, w.CompletedAt, w.UpdatedAt,
 	)
 	if err != nil {
@@ -338,18 +338,18 @@ func scanWorkOrder(row rowScanner) (*domain.WorkOrder, error) {
 	var rating sql.NullInt32
 	var scheduledStart, scheduledEnd, dueDate, completedAt sql.NullTime
 	var estimatedCost, actualCost sql.NullFloat64
-	var recurringRuleID uuid.NullUUID
+	var photoAttachmentID, invoiceAttachmentID, recurringRuleID uuid.NullUUID
 
 	err := row.Scan(
 		&w.ID, &w.PropertyID, &unitID, &w.Title, &w.Description, &w.Category, &w.Priority, &w.Status,
 		&w.ReportedBy, &w.ReportedByContact, &w.AssignedTo, &w.AssignedToContact, &vendorID, &rating, &w.AccessInstructions,
-		&scheduledStart, &scheduledEnd, &dueDate, &estimatedCost, &actualCost, &w.PhotoLink, &w.InvoiceLink,
+		&scheduledStart, &scheduledEnd, &dueDate, &estimatedCost, &actualCost, &photoAttachmentID, &invoiceAttachmentID,
 		&w.InternalNotes, &recurringRuleID, &completedAt, &w.CreatedAt, &w.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err
 	}
-	applyWorkOrderNullables(&w, unitID, vendorID, rating, scheduledStart, scheduledEnd, dueDate, completedAt, estimatedCost, actualCost, recurringRuleID)
+	applyWorkOrderNullables(&w, unitID, vendorID, rating, scheduledStart, scheduledEnd, dueDate, completedAt, estimatedCost, actualCost, photoAttachmentID, invoiceAttachmentID, recurringRuleID)
 	return &w, nil
 }
 
@@ -359,19 +359,19 @@ func scanWorkOrderWithProperty(row rowScanner) (*domain.WorkOrderWithProperty, e
 	var rating sql.NullInt32
 	var scheduledStart, scheduledEnd, dueDate, completedAt sql.NullTime
 	var estimatedCost, actualCost sql.NullFloat64
-	var recurringRuleID uuid.NullUUID
+	var photoAttachmentID, invoiceAttachmentID, recurringRuleID uuid.NullUUID
 
 	err := row.Scan(
 		&w.ID, &w.PropertyID, &unitID, &w.Title, &w.Description, &w.Category, &w.Priority, &w.Status,
 		&w.ReportedBy, &w.ReportedByContact, &w.AssignedTo, &w.AssignedToContact, &vendorID, &rating, &w.AccessInstructions,
-		&scheduledStart, &scheduledEnd, &dueDate, &estimatedCost, &actualCost, &w.PhotoLink, &w.InvoiceLink,
+		&scheduledStart, &scheduledEnd, &dueDate, &estimatedCost, &actualCost, &photoAttachmentID, &invoiceAttachmentID,
 		&w.InternalNotes, &recurringRuleID, &completedAt, &w.CreatedAt, &w.UpdatedAt,
 		&w.PropertyName, &w.UnitName, &w.VendorName,
 	)
 	if err != nil {
 		return nil, err
 	}
-	applyWorkOrderNullables(&w.WorkOrder, unitID, vendorID, rating, scheduledStart, scheduledEnd, dueDate, completedAt, estimatedCost, actualCost, recurringRuleID)
+	applyWorkOrderNullables(&w.WorkOrder, unitID, vendorID, rating, scheduledStart, scheduledEnd, dueDate, completedAt, estimatedCost, actualCost, photoAttachmentID, invoiceAttachmentID, recurringRuleID)
 	return &w, nil
 }
 
@@ -381,7 +381,7 @@ func applyWorkOrderNullables(
 	rating sql.NullInt32,
 	scheduledStart, scheduledEnd, dueDate, completedAt sql.NullTime,
 	estimatedCost, actualCost sql.NullFloat64,
-	recurringRuleID uuid.NullUUID,
+	photoAttachmentID, invoiceAttachmentID, recurringRuleID uuid.NullUUID,
 ) {
 	if unitID.Valid {
 		v := unitID.UUID
@@ -390,6 +390,14 @@ func applyWorkOrderNullables(
 	if vendorID.Valid {
 		v := vendorID.UUID
 		w.VendorID = &v
+	}
+	if photoAttachmentID.Valid {
+		v := photoAttachmentID.UUID
+		w.PhotoAttachmentID = &v
+	}
+	if invoiceAttachmentID.Valid {
+		v := invoiceAttachmentID.UUID
+		w.InvoiceAttachmentID = &v
 	}
 	if rating.Valid {
 		v := int(rating.Int32)

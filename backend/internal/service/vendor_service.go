@@ -15,13 +15,14 @@ import (
 // hop, like PropertyService, since a vendor belongs directly to an
 // owner rather than through a parent.
 type VendorService struct {
-	repo         domain.VendorRepository
-	propertyRepo domain.PropertyRepository
-	log          *slog.Logger
+	repo           domain.VendorRepository
+	propertyRepo   domain.PropertyRepository
+	attachmentRepo domain.AttachmentRepository
+	log            *slog.Logger
 }
 
-func NewVendorService(repo domain.VendorRepository, propertyRepo domain.PropertyRepository, log *slog.Logger) *VendorService {
-	return &VendorService{repo: repo, propertyRepo: propertyRepo, log: log}
+func NewVendorService(repo domain.VendorRepository, propertyRepo domain.PropertyRepository, attachmentRepo domain.AttachmentRepository, log *slog.Logger) *VendorService {
+	return &VendorService{repo: repo, propertyRepo: propertyRepo, attachmentRepo: attachmentRepo, log: log}
 }
 
 var _ domain.VendorService = (*VendorService)(nil)
@@ -33,6 +34,12 @@ func (s *VendorService) CreateVendor(ctx context.Context, ownerID uuid.UUID, inp
 
 	propertiesServed, err := s.resolvePropertiesServed(ctx, ownerID, input.ServesAllProperties, input.PropertiesServed)
 	if err != nil {
+		return nil, fmt.Errorf("create vendor: %w", err)
+	}
+	if err := requireOwnedAttachment(ctx, s.attachmentRepo, ownerID, input.COIAttachmentID, "coi_attachment_id"); err != nil {
+		return nil, fmt.Errorf("create vendor: %w", err)
+	}
+	if err := requireOwnedAttachment(ctx, s.attachmentRepo, ownerID, input.TaxDocAttachmentID, "tax_doc_attachment_id"); err != nil {
 		return nil, fmt.Errorf("create vendor: %w", err)
 	}
 
@@ -50,8 +57,8 @@ func (s *VendorService) CreateVendor(ctx context.Context, ownerID uuid.UUID, inp
 		InsuranceExpiry:     input.InsuranceExpiry,
 		LicenseNumber:       input.LicenseNumber,
 		LicenseExpiry:       input.LicenseExpiry,
-		COILink:             input.COILink,
-		TaxDocLink:          input.TaxDocLink,
+		COIAttachmentID:     input.COIAttachmentID,
+		TaxDocAttachmentID:  input.TaxDocAttachmentID,
 		RateType:            input.RateType,
 		RateAmount:          input.RateAmount,
 		PaymentTerms:        input.PaymentTerms,
@@ -150,11 +157,17 @@ func (s *VendorService) UpdateVendor(ctx context.Context, id, ownerID uuid.UUID,
 	if input.LicenseExpiry != nil {
 		v.LicenseExpiry = input.LicenseExpiry
 	}
-	if input.COILink != nil {
-		v.COILink = *input.COILink
+	if input.COIAttachmentIDSet {
+		if err := requireOwnedAttachment(ctx, s.attachmentRepo, ownerID, input.COIAttachmentID, "coi_attachment_id"); err != nil {
+			return nil, fmt.Errorf("update vendor %s: %w", id, err)
+		}
+		v.COIAttachmentID = input.COIAttachmentID
 	}
-	if input.TaxDocLink != nil {
-		v.TaxDocLink = *input.TaxDocLink
+	if input.TaxDocAttachmentIDSet {
+		if err := requireOwnedAttachment(ctx, s.attachmentRepo, ownerID, input.TaxDocAttachmentID, "tax_doc_attachment_id"); err != nil {
+			return nil, fmt.Errorf("update vendor %s: %w", id, err)
+		}
+		v.TaxDocAttachmentID = input.TaxDocAttachmentID
 	}
 	if input.RateType != nil {
 		if !input.RateType.Valid() {

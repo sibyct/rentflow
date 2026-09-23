@@ -78,6 +78,28 @@ func ownedTransaction(ctx context.Context, repo domain.LedgerRepository, id, own
 
 func isNotFound(err error) bool { return errors.Is(err, domain.ErrNotFound) }
 
+// requireOwnedAttachment validates that attachmentID, if set, is a
+// ready attachment owned by ownerID — the same IDOR-safe check every
+// other cross-reference in this codebase does, so a work order or
+// vendor can never point at someone else's file, or one that never
+// finished uploading.
+func requireOwnedAttachment(ctx context.Context, repo domain.AttachmentRepository, ownerID uuid.UUID, attachmentID *uuid.UUID, field string) error {
+	if attachmentID == nil {
+		return nil
+	}
+	a, err := repo.GetByID(ctx, *attachmentID)
+	if err != nil {
+		if isNotFound(err) {
+			return domain.ValidationErrors{{Field: field, Message: "unknown attachment"}}
+		}
+		return err
+	}
+	if a.OwnerID != ownerID || a.Status != domain.AttachmentStatusReady {
+		return domain.ValidationErrors{{Field: field, Message: "unknown attachment"}}
+	}
+	return nil
+}
+
 func errorsIsAlreadyExists(err error) bool { return errors.Is(err, domain.ErrAlreadyExists) }
 
 func validationError(field, message string) domain.ValidationErrors {

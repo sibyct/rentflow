@@ -50,8 +50,8 @@ export interface VendorRow {
   insuranceStatus: InsuranceStatus;
   licenseNumber: string;
   licenseExpiry: string;
-  coiLink: string;
-  taxDocLink: string;
+  coiAttachmentId: string;
+  taxDocAttachmentId: string;
   rateType: VendorRateType | '';
   rateAmount: number | null;
   paymentTerms: VendorPaymentTerms | '';

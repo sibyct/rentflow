@@ -22,6 +22,7 @@ import CloseOutlined from '@mui/icons-material/CloseOutlined';
 import { ApiError } from '@/api/client';
 import { tokens } from '@/app/tokens';
 import type { PropertyRow } from '@/features/properties/mock/propertyRows';
+import { FileUpload } from '@/shared/components';
 import { toFormValues } from '../api/vendorsApi';
 import { useCreateVendor, useUpdateVendor, useVendor, useVendorPropertiesServed } from '../hooks/useVendorsQueries';
 import { vendorDefaultValues, vendorSchema, type VendorFormValues } from '../schemas/vendorSchema';
@@ -54,6 +55,10 @@ export function VendorFormDialog({ open, onClose, properties, vendorId, onSaved 
   const createVendor = useCreateVendor();
   const updateVendor = useUpdateVendor();
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // Names of just-uploaded files this session — an existing attachment
+  // loaded from the record shows a generic label instead (see FileUpload).
+  const [coiName, setCoiName] = useState('');
+  const [taxDocName, setTaxDocName] = useState('');
 
   const {
     control,
@@ -80,6 +85,8 @@ export function VendorFormDialog({ open, onClose, properties, vendorId, onSaved 
       reset(vendorDefaultValues());
     }
     setSubmitError(null);
+    setCoiName('');
+    setTaxDocName('');
   }, [open, isEditMode, existingVendor, propertiesServed, reset]);
 
   const isPending = createVendor.isPending || updateVendor.isPending;
@@ -207,13 +214,27 @@ export function VendorFormDialog({ open, onClose, properties, vendorId, onSaved 
               </FormSection>
 
               <FormSection title="Compliance">
-                <Stack direction="row" spacing={2}>
+                <Stack direction="row" spacing={2} sx={{ alignItems: 'flex-start' }}>
                   <Controller
                     name="insuranceExpiry"
                     control={control}
                     render={({ field }) => <TextField {...field} label="Insurance expiry" type="date" fullWidth slotProps={{ inputLabel: { shrink: true } }} />}
                   />
-                  <Controller name="coiLink" control={control} render={({ field }) => <TextField {...field} label="COI link" fullWidth placeholder="Paste a link (no file upload yet)" />} />
+                  <Controller
+                    name="coiAttachmentId"
+                    control={control}
+                    render={({ field }) => (
+                      <FileUpload
+                        label="Certificate of insurance"
+                        value={field.value ?? ''}
+                        filename={coiName}
+                        onChange={(id, name) => {
+                          field.onChange(id);
+                          setCoiName(name);
+                        }}
+                      />
+                    )}
+                  />
                 </Stack>
                 <Stack direction="row" spacing={2}>
                   <Controller name="licenseNumber" control={control} render={({ field }) => <TextField {...field} label="License number" fullWidth />} />
@@ -223,7 +244,21 @@ export function VendorFormDialog({ open, onClose, properties, vendorId, onSaved 
                     render={({ field }) => <TextField {...field} label="License expiry" type="date" fullWidth slotProps={{ inputLabel: { shrink: true } }} />}
                   />
                 </Stack>
-                <Controller name="taxDocLink" control={control} render={({ field }) => <TextField {...field} label="Tax document link (W-9, etc.)" fullWidth placeholder="Paste a link (no file upload yet)" />} />
+                <Controller
+                  name="taxDocAttachmentId"
+                  control={control}
+                  render={({ field }) => (
+                    <FileUpload
+                      label="Tax document (W-9, etc.)"
+                      value={field.value ?? ''}
+                      filename={taxDocName}
+                      onChange={(id, name) => {
+                        field.onChange(id);
+                        setTaxDocName(name);
+                      }}
+                    />
+                  )}
+                />
               </FormSection>
 
               <FormSection title="Billing">

@@ -31,6 +31,7 @@ import { tokens } from '@/app/tokens';
 import type { PropertyRow } from '@/features/properties/mock/propertyRows';
 import { useUnits } from '@/features/units/hooks/useUnitsQueries';
 import { VendorRatingInput, VendorSelector } from '@/features/vendors/components/VendorSelector';
+import { FileUpload } from '@/shared/components';
 import { relativeTime } from '@/shared/lib/relativeTime';
 import { toFormValues } from '../api/workOrdersApi';
 import {
@@ -92,6 +93,10 @@ export function WorkOrderDrawer({ open, onClose, propertyId, unitId, properties,
   const [completePromptOpen, setCompletePromptOpen] = useState(false);
   const [noteDraft, setNoteDraft] = useState('');
   const [noteVisibility, setNoteVisibility] = useState<'internal' | 'tenant_visible'>('internal');
+  // Names of just-uploaded files this session — an existing attachment
+  // loaded from the record shows a generic label instead (see FileUpload).
+  const [photoName, setPhotoName] = useState('');
+  const [invoiceName, setInvoiceName] = useState('');
 
   const {
     control,
@@ -117,6 +122,8 @@ export function WorkOrderDrawer({ open, onClose, propertyId, unitId, properties,
     setSubmitError(null);
     setCompletePromptOpen(false);
     setNoteDraft('');
+    setPhotoName('');
+    setInvoiceName('');
   }, [open, isEditMode, existingWorkOrder, unitId, reset]);
 
   const priority = watch('priority');
@@ -144,7 +151,7 @@ export function WorkOrderDrawer({ open, onClose, propertyId, unitId, properties,
   }
 
   function handleStatusShortcut(next: WorkOrderFormValues['status']) {
-    if (next === 'completed' && !getValues('actualCost') && !getValues('photoLink')) {
+    if (next === 'completed' && !getValues('actualCost') && !getValues('photoAttachmentId')) {
       setCompletePromptOpen(true);
       return;
     }
@@ -264,9 +271,19 @@ export function WorkOrderDrawer({ open, onClose, propertyId, unitId, properties,
                     render={({ field }) => <TextField {...field} label="Description" fullWidth multiline minRows={3} />}
                   />
                   <Controller
-                    name="photoLink"
+                    name="photoAttachmentId"
                     control={control}
-                    render={({ field }) => <TextField {...field} label="Photo / video link" fullWidth placeholder="Paste a link (no file upload yet)" />}
+                    render={({ field }) => (
+                      <FileUpload
+                        label="Photo"
+                        value={field.value ?? ''}
+                        filename={photoName}
+                        onChange={(id, name) => {
+                          field.onChange(id);
+                          setPhotoName(name);
+                        }}
+                      />
+                    )}
                   />
                 </FormSection>
 
@@ -392,7 +409,21 @@ export function WorkOrderDrawer({ open, onClose, propertyId, unitId, properties,
                     <Controller name="estimatedCost" control={control} render={({ field }) => <TextField {...field} label="Estimated cost" type="number" fullWidth slotProps={{ input: { startAdornment: '$' } }} />} />
                     <Controller name="actualCost" control={control} render={({ field }) => <TextField {...field} label="Actual cost" type="number" fullWidth slotProps={{ input: { startAdornment: '$' } }} />} />
                   </Stack>
-                  <Controller name="invoiceLink" control={control} render={({ field }) => <TextField {...field} label="Vendor invoice link" fullWidth placeholder="Paste a link (no file upload yet)" />} />
+                  <Controller
+                    name="invoiceAttachmentId"
+                    control={control}
+                    render={({ field }) => (
+                      <FileUpload
+                        label="Vendor invoice"
+                        value={field.value ?? ''}
+                        filename={invoiceName}
+                        onChange={(id, name) => {
+                          field.onChange(id);
+                          setInvoiceName(name);
+                        }}
+                      />
+                    )}
+                  />
                 </FormSection>
 
                 <FormSection title="Internal notes">
@@ -520,7 +551,21 @@ export function WorkOrderDrawer({ open, onClose, propertyId, unitId, properties,
           <Stack spacing={2} sx={{ pt: 1 }}>
             <Typography sx={{ fontSize: 13, color: tokens.slate[600] }}>Add the actual cost and a completion photo link before closing this out — or skip and complete anyway.</Typography>
             <Controller name="actualCost" control={control} render={({ field }) => <TextField {...field} label="Actual cost" type="number" fullWidth size="small" slotProps={{ input: { startAdornment: '$' } }} />} />
-            <Controller name="photoLink" control={control} render={({ field }) => <TextField {...field} label="Completion photo link" fullWidth size="small" />} />
+            <Controller
+              name="photoAttachmentId"
+              control={control}
+              render={({ field }) => (
+                <FileUpload
+                  label="Completion photo"
+                  value={field.value ?? ''}
+                  filename={photoName}
+                  onChange={(id, name) => {
+                    field.onChange(id);
+                    setPhotoName(name);
+                  }}
+                />
+              )}
+            />
             {vendorId && (
               <Controller
                 name="rating"
