@@ -42,6 +42,12 @@ type User struct {
 	InviteExpiresAt *time.Time
 	InviteTokenHash string
 	LastLoginAt     *time.Time
+
+	// PasswordResetTokenHash/PasswordResetExpiresAt back an admin-
+	// triggered reset link — see StaffService.ResetPassword. Set on any
+	// account (root or staff), unlike the invite fields above.
+	PasswordResetTokenHash string
+	PasswordResetExpiresAt *time.Time
 }
 
 // AccountID is the portfolio this user acts within — its own id for a

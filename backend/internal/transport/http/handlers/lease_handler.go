@@ -49,7 +49,8 @@ func (h *LeaseHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	l, err := h.svc.CreateLease(r.Context(), claims.UserID, input)
+	access, _ := middleware.PropertyAccessFromContext(r.Context())
+	l, err := h.svc.CreateLease(r.Context(), claims.UserID, input, access)
 	if err != nil {
 		response.WriteError(w, r, err)
 		return
@@ -71,7 +72,8 @@ func (h *LeaseHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	l, err := h.svc.GetLease(r.Context(), id, claims.UserID)
+	access, _ := middleware.PropertyAccessFromContext(r.Context())
+	l, err := h.svc.GetLease(r.Context(), id, claims.UserID, access)
 	if err != nil {
 		response.WriteError(w, r, err)
 		return
@@ -94,6 +96,7 @@ func (h *LeaseHandler) List(w http.ResponseWriter, r *http.Request) {
 		response.WriteError(w, r, err)
 		return
 	}
+	opts.PropertyAccess, _ = middleware.PropertyAccessFromContext(r.Context())
 
 	leases, total, err := h.svc.ListLeasesForOwner(r.Context(), claims.UserID, opts)
 	if err != nil {
@@ -133,7 +136,8 @@ func (h *LeaseHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	l, err := h.svc.UpdateLease(r.Context(), id, claims.UserID, input)
+	access, _ := middleware.PropertyAccessFromContext(r.Context())
+	l, err := h.svc.UpdateLease(r.Context(), id, claims.UserID, input, access)
 	if err != nil {
 		response.WriteError(w, r, err)
 		return
@@ -155,7 +159,8 @@ func (h *LeaseHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.svc.DeleteLease(r.Context(), id, claims.UserID); err != nil {
+	access, _ := middleware.PropertyAccessFromContext(r.Context())
+	if err := h.svc.DeleteLease(r.Context(), id, claims.UserID, access); err != nil {
 		response.WriteError(w, r, err)
 		return
 	}

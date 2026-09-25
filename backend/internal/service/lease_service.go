@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
 	"time"
 
 	"github.com/google/uuid"
@@ -47,8 +48,8 @@ func (s *LeaseService) ensureDeposit(ctx context.Context, ownerID uuid.UUID, l *
 	}
 }
 
-func (s *LeaseService) CreateLease(ctx context.Context, ownerID uuid.UUID, input domain.CreateLeaseInput) (*domain.Lease, error) {
-	unit, err := s.requireOwnedUnit(ctx, input.UnitID, ownerID)
+func (s *LeaseService) CreateLease(ctx context.Context, ownerID uuid.UUID, input domain.CreateLeaseInput, access domain.PropertyAccess) (*domain.Lease, error) {
+	unit, err := s.requireOwnedUnit(ctx, input.UnitID, ownerID, access)
 	if err != nil {
 		return nil, fmt.Errorf("create lease: %w", err)
 	}
@@ -107,12 +108,12 @@ func (s *LeaseService) CreateLease(ctx context.Context, ownerID uuid.UUID, input
 	return l, nil
 }
 
-func (s *LeaseService) GetLease(ctx context.Context, id, ownerID uuid.UUID) (*domain.LeaseWithUnitProperty, error) {
+func (s *LeaseService) GetLease(ctx context.Context, id, ownerID uuid.UUID, access domain.PropertyAccess) (*domain.LeaseWithUnitProperty, error) {
 	l, err := s.repo.GetByID(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("get lease %s: %w", id, err)
 	}
-	u, err := s.requireOwnedUnit(ctx, l.UnitID, ownerID)
+	u, err := s.requireOwnedUnit(ctx, l.UnitID, ownerID, access)
 	if err != nil {
 		return nil, fmt.Errorf("get lease %s: %w", id, err)
 	}
@@ -143,12 +144,12 @@ func (s *LeaseService) ListLeasesForOwner(ctx context.Context, ownerID uuid.UUID
 	return leases, total, nil
 }
 
-func (s *LeaseService) UpdateLease(ctx context.Context, id, ownerID uuid.UUID, input domain.UpdateLeaseInput) (*domain.Lease, error) {
+func (s *LeaseService) UpdateLease(ctx context.Context, id, ownerID uuid.UUID, input domain.UpdateLeaseInput, access domain.PropertyAccess) (*domain.Lease, error) {
 	l, err := s.repo.GetByID(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("update lease %s: %w", id, err)
 	}
-	unit, err := s.requireOwnedUnit(ctx, l.UnitID, ownerID)
+	unit, err := s.requireOwnedUnit(ctx, l.UnitID, ownerID, access)
 	if err != nil {
 		return nil, fmt.Errorf("update lease %s: %w", id, err)
 	}
@@ -282,12 +283,12 @@ func (s *LeaseService) UpdateLease(ctx context.Context, id, ownerID uuid.UUID, i
 	return l, nil
 }
 
-func (s *LeaseService) DeleteLease(ctx context.Context, id, ownerID uuid.UUID) error {
+func (s *LeaseService) DeleteLease(ctx context.Context, id, ownerID uuid.UUID, access domain.PropertyAccess) error {
 	l, err := s.repo.GetByID(ctx, id)
 	if err != nil {
 		return fmt.Errorf("delete lease %s: %w", id, err)
 	}
-	if _, err := s.requireOwnedUnit(ctx, l.UnitID, ownerID); err != nil {
+	if _, err := s.requireOwnedUnit(ctx, l.UnitID, ownerID, access); err != nil {
 		return fmt.Errorf("delete lease %s: %w", id, err)
 	}
 
@@ -301,7 +302,7 @@ func (s *LeaseService) DeleteLease(ctx context.Context, id, ownerID uuid.UUID) e
 // domain.ErrNotFound (not ErrForbidden) if the property belongs to
 // someone else — an authenticated user should not be able to
 // distinguish "not yours" from "doesn't exist" by probing IDs.
-func (s *LeaseService) requireOwnedUnit(ctx context.Context, unitID, ownerID uuid.UUID) (*domain.Unit, error) {
+func (s *LeaseService) requireOwnedUnit(ctx context.Context, unitID, ownerID uuid.UUID, access domain.PropertyAccess) (*domain.Unit, error) {
 	u, err := s.unitRepo.GetByID(ctx, unitID)
 	if err != nil {
 		return nil, err
@@ -311,6 +312,9 @@ func (s *LeaseService) requireOwnedUnit(ctx context.Context, unitID, ownerID uui
 		return nil, err
 	}
 	if p.OwnerID != ownerID {
+		return nil, domain.ErrNotFound
+	}
+	if !access.All && !slices.Contains(access.PropertyIDs, p.ID) {
 		return nil, domain.ErrNotFound
 	}
 	return u, nil

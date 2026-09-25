@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"slices"
 	"testing"
 	"time"
 
@@ -78,14 +79,14 @@ func (f *fakePropertyRepository) Delete(_ context.Context, id uuid.UUID) error {
 	return nil
 }
 
-func (f *fakePropertyRepository) BulkUpdateStatus(_ context.Context, ownerID uuid.UUID, ids []uuid.UUID, status domain.PropertyStatus) (int, error) {
+func (f *fakePropertyRepository) BulkUpdateStatus(_ context.Context, ownerID uuid.UUID, ids []uuid.UUID, status domain.PropertyStatus, access domain.PropertyAccess) (int, error) {
 	wanted := make(map[uuid.UUID]bool, len(ids))
 	for _, id := range ids {
 		wanted[id] = true
 	}
 	n := 0
 	for id, p := range f.properties {
-		if p.OwnerID == ownerID && wanted[id] {
+		if p.OwnerID == ownerID && wanted[id] && (access.All || slices.Contains(access.PropertyIDs, id)) {
 			p.Status = status
 			n++
 		}
@@ -310,7 +311,7 @@ func TestPropertyService_GetProperty(t *testing.T) {
 	repo.properties[existing.ID] = existing
 
 	t.Run("found", func(t *testing.T) {
-		got, err := svc.GetProperty(context.Background(), existing.ID, ownerID)
+		got, err := svc.GetProperty(context.Background(), existing.ID, ownerID, domain.AllPropertyAccess())
 		if err != nil {
 			t.Fatalf("GetProperty() unexpected error = %v", err)
 		}
@@ -320,7 +321,7 @@ func TestPropertyService_GetProperty(t *testing.T) {
 	})
 
 	t.Run("not found", func(t *testing.T) {
-		_, err := svc.GetProperty(context.Background(), uuid.New(), ownerID)
+		_, err := svc.GetProperty(context.Background(), uuid.New(), ownerID, domain.AllPropertyAccess())
 		if !errors.Is(err, domain.ErrNotFound) {
 			t.Fatalf("GetProperty() error = %v, want %v", err, domain.ErrNotFound)
 		}
@@ -330,9 +331,29 @@ func TestPropertyService_GetProperty(t *testing.T) {
 	// not-found, not forbidden — see domain.PropertyService's GetProperty
 	// doc comment on why (no confirming a given ID belongs to anyone).
 	t.Run("belongs to a different owner", func(t *testing.T) {
-		_, err := svc.GetProperty(context.Background(), existing.ID, uuid.New())
+		_, err := svc.GetProperty(context.Background(), existing.ID, uuid.New(), domain.AllPropertyAccess())
 		if !errors.Is(err, domain.ErrNotFound) {
 			t.Fatalf("GetProperty() error = %v, want %v", err, domain.ErrNotFound)
+		}
+	})
+
+	// Property-scope enforcement (Piece 1): a staff member scoped to a
+	// specific set of properties must read a property outside that set
+	// as not-found, same IDOR-safe contract as an owner mismatch above.
+	t.Run("owned but outside scoped access", func(t *testing.T) {
+		_, err := svc.GetProperty(context.Background(), existing.ID, ownerID, domain.PropertyAccess{PropertyIDs: []uuid.UUID{uuid.New()}})
+		if !errors.Is(err, domain.ErrNotFound) {
+			t.Fatalf("GetProperty() error = %v, want %v", err, domain.ErrNotFound)
+		}
+	})
+
+	t.Run("owned and within scoped access", func(t *testing.T) {
+		got, err := svc.GetProperty(context.Background(), existing.ID, ownerID, domain.PropertyAccess{PropertyIDs: []uuid.UUID{existing.ID}})
+		if err != nil {
+			t.Fatalf("GetProperty() unexpected error = %v", err)
+		}
+		if got.ID != existing.ID {
+			t.Errorf("GetProperty() id = %v, want %v", got.ID, existing.ID)
 		}
 	})
 }
@@ -356,7 +377,7 @@ func TestPropertyService_UpdateProperty(t *testing.T) {
 	newAddress := "2 Updated Way"
 	got, err := svc.UpdateProperty(context.Background(), existing.ID, ownerID, domain.UpdatePropertyInput{
 		AddressLine1: &newAddress,
-	})
+	}, domain.AllPropertyAccess())
 	if err != nil {
 		t.Fatalf("UpdateProperty() unexpected error = %v", err)
 	}
@@ -369,7 +390,7 @@ func TestPropertyService_UpdateProperty(t *testing.T) {
 
 	t.Run("not found", func(t *testing.T) {
 		addr := "nowhere"
-		_, err := svc.UpdateProperty(context.Background(), uuid.New(), ownerID, domain.UpdatePropertyInput{AddressLine1: &addr})
+		_, err := svc.UpdateProperty(context.Background(), uuid.New(), ownerID, domain.UpdatePropertyInput{AddressLine1: &addr}, domain.AllPropertyAccess())
 		if !errors.Is(err, domain.ErrNotFound) {
 			t.Fatalf("UpdateProperty() error = %v, want %v", err, domain.ErrNotFound)
 		}
@@ -377,7 +398,7 @@ func TestPropertyService_UpdateProperty(t *testing.T) {
 
 	t.Run("belongs to a different owner", func(t *testing.T) {
 		addr := "nowhere"
-		_, err := svc.UpdateProperty(context.Background(), existing.ID, uuid.New(), domain.UpdatePropertyInput{AddressLine1: &addr})
+		_, err := svc.UpdateProperty(context.Background(), existing.ID, uuid.New(), domain.UpdatePropertyInput{AddressLine1: &addr}, domain.AllPropertyAccess())
 		if !errors.Is(err, domain.ErrNotFound) {
 			t.Fatalf("UpdateProperty() error = %v, want %v", err, domain.ErrNotFound)
 		}
@@ -385,7 +406,7 @@ func TestPropertyService_UpdateProperty(t *testing.T) {
 
 	t.Run("empty address rejected", func(t *testing.T) {
 		empty := ""
-		_, err := svc.UpdateProperty(context.Background(), existing.ID, ownerID, domain.UpdatePropertyInput{AddressLine1: &empty})
+		_, err := svc.UpdateProperty(context.Background(), existing.ID, ownerID, domain.UpdatePropertyInput{AddressLine1: &empty}, domain.AllPropertyAccess())
 		if !errors.Is(err, domain.ErrInvalidInput) {
 			t.Fatalf("UpdateProperty() error = %v, want %v", err, domain.ErrInvalidInput)
 		}
@@ -401,7 +422,7 @@ func TestPropertyService_DeleteProperty(t *testing.T) {
 	repo.properties[existing.ID] = existing
 
 	t.Run("belongs to a different owner", func(t *testing.T) {
-		if err := svc.DeleteProperty(context.Background(), existing.ID, uuid.New()); !errors.Is(err, domain.ErrNotFound) {
+		if err := svc.DeleteProperty(context.Background(), existing.ID, uuid.New(), domain.AllPropertyAccess()); !errors.Is(err, domain.ErrNotFound) {
 			t.Fatalf("DeleteProperty() error = %v, want %v", err, domain.ErrNotFound)
 		}
 		if _, ok := repo.properties[existing.ID]; !ok {
@@ -409,14 +430,14 @@ func TestPropertyService_DeleteProperty(t *testing.T) {
 		}
 	})
 
-	if err := svc.DeleteProperty(context.Background(), existing.ID, ownerID); err != nil {
+	if err := svc.DeleteProperty(context.Background(), existing.ID, ownerID, domain.AllPropertyAccess()); err != nil {
 		t.Fatalf("DeleteProperty() unexpected error = %v", err)
 	}
 	if _, ok := repo.properties[existing.ID]; ok {
 		t.Error("DeleteProperty() property still present after delete")
 	}
 
-	if err := svc.DeleteProperty(context.Background(), existing.ID, ownerID); !errors.Is(err, domain.ErrNotFound) {
+	if err := svc.DeleteProperty(context.Background(), existing.ID, ownerID, domain.AllPropertyAccess()); !errors.Is(err, domain.ErrNotFound) {
 		t.Fatalf("DeleteProperty() second delete error = %v, want %v", err, domain.ErrNotFound)
 	}
 }
@@ -431,7 +452,7 @@ func TestPropertyService_ListProperties_ClampsLimit(t *testing.T) {
 		repo.properties[id] = &domain.Property{ID: id, OwnerID: ownerID, Name: "P", AddressLine1: "addr"}
 	}
 
-	got, total, err := svc.ListProperties(context.Background(), domain.PropertyListOptions{OwnerID: ownerID, Limit: -1, Offset: -5})
+	got, total, err := svc.ListProperties(context.Background(), domain.PropertyListOptions{OwnerID: ownerID, PropertyAccess: domain.AllPropertyAccess(), Limit: -1, Offset: -5})
 	if err != nil {
 		t.Fatalf("ListProperties() unexpected error = %v", err)
 	}
@@ -549,7 +570,7 @@ func TestPropertyService_BulkUpdateStatus(t *testing.T) {
 	otherID := uuid.New()
 	repo.properties[otherID] = &domain.Property{ID: otherID, OwnerID: otherOwnerID, Name: "Other", AddressLine1: "addr", Status: domain.PropertyStatusActive}
 
-	n, err := svc.BulkUpdateStatus(context.Background(), ownerID, append(ids, otherID), domain.PropertyStatusArchived)
+	n, err := svc.BulkUpdateStatus(context.Background(), ownerID, append(ids, otherID), domain.PropertyStatusArchived, domain.AllPropertyAccess())
 	if err != nil {
 		t.Fatalf("BulkUpdateStatus() unexpected error = %v", err)
 	}
@@ -566,13 +587,13 @@ func TestPropertyService_BulkUpdateStatus(t *testing.T) {
 	}
 
 	t.Run("empty ids rejected", func(t *testing.T) {
-		if _, err := svc.BulkUpdateStatus(context.Background(), ownerID, nil, domain.PropertyStatusArchived); !errors.Is(err, domain.ErrInvalidInput) {
+		if _, err := svc.BulkUpdateStatus(context.Background(), ownerID, nil, domain.PropertyStatusArchived, domain.AllPropertyAccess()); !errors.Is(err, domain.ErrInvalidInput) {
 			t.Fatalf("BulkUpdateStatus() error = %v, want %v", err, domain.ErrInvalidInput)
 		}
 	})
 
 	t.Run("unknown status rejected", func(t *testing.T) {
-		if _, err := svc.BulkUpdateStatus(context.Background(), ownerID, ids, "condemned"); !errors.Is(err, domain.ErrInvalidInput) {
+		if _, err := svc.BulkUpdateStatus(context.Background(), ownerID, ids, "condemned", domain.AllPropertyAccess()); !errors.Is(err, domain.ErrInvalidInput) {
 			t.Fatalf("BulkUpdateStatus() error = %v, want %v", err, domain.ErrInvalidInput)
 		}
 	})

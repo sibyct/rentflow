@@ -41,6 +41,33 @@ func Authenticate(authSvc domain.AuthService) func(http.Handler) http.Handler {
 	}
 }
 
+// ResolvePropertyAccess computes the signed-in user's current property
+// scope via StaffService.ResolveAccess and stores it in context. It
+// must run after Authenticate (reads claims.UserID/ActorID) and before
+// any handler that checks PropertyAccessFromContext. Resolved fresh
+// every request — never cached on the JWT — since a staff member's
+// scope can change between requests.
+func ResolvePropertyAccess(staffSvc domain.StaffService) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			claims, ok := ClaimsFromContext(r.Context())
+			if !ok {
+				response.WriteError(w, r, fmt.Errorf("resolve property access %s: %w", r.URL.Path, domain.ErrUnauthorized))
+				return
+			}
+
+			access, err := staffSvc.ResolveAccess(r.Context(), claims.UserID, claims.ActorID)
+			if err != nil {
+				response.WriteError(w, r, fmt.Errorf("resolve property access %s: %w", r.URL.Path, err))
+				return
+			}
+
+			ctx := reqctx.WithPropertyAccess(r.Context(), access)
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+}
+
 // RequireRole restricts a route to one of the given roles. It must run
 // after Authenticate.
 func RequireRole(roles ...domain.UserRole) func(http.Handler) http.Handler {
@@ -79,4 +106,8 @@ func RequireAccountAdmin(next http.Handler) http.Handler {
 
 func ClaimsFromContext(ctx context.Context) (*domain.AuthClaims, bool) {
 	return reqctx.Claims(ctx)
+}
+
+func PropertyAccessFromContext(ctx context.Context) (domain.PropertyAccess, bool) {
+	return reqctx.PropertyAccess(ctx)
 }

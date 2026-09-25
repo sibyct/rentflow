@@ -217,6 +217,7 @@ func (k WorkOrderSortKey) Valid() bool {
 type WorkOrderListFilter struct {
 	Search     string
 	PropertyID *uuid.UUID
+	UnitID     *uuid.UUID
 	Status     *WorkOrderStatus
 	Priority   *WorkOrderPriority
 	Category   *WorkOrderCategory
@@ -227,12 +228,13 @@ type WorkOrderListFilter struct {
 }
 
 type WorkOrderListOptions struct {
-	OwnerID  uuid.UUID
-	Filter   WorkOrderListFilter
-	Sort     WorkOrderSortKey
-	SortDesc bool
-	Limit    int
-	Offset   int
+	OwnerID        uuid.UUID
+	PropertyAccess PropertyAccess
+	Filter         WorkOrderListFilter
+	Sort           WorkOrderSortKey
+	SortDesc       bool
+	Limit          int
+	Offset         int
 }
 
 // WorkOrderWithProperty decorates a WorkOrder with its property's (and,
@@ -317,8 +319,8 @@ type WorkOrderRepository interface {
 	ListForOwner(ctx context.Context, opts WorkOrderListOptions) ([]*WorkOrderWithProperty, int, error)
 	Update(ctx context.Context, w *WorkOrder) error
 	Delete(ctx context.Context, id uuid.UUID) error
-	BulkUpdateStatus(ctx context.Context, ownerID uuid.UUID, ids []uuid.UUID, status WorkOrderStatus) (int, error)
-	BulkReassign(ctx context.Context, ownerID uuid.UUID, ids []uuid.UUID, assignedTo string) (int, error)
+	BulkUpdateStatus(ctx context.Context, ownerID uuid.UUID, ids []uuid.UUID, status WorkOrderStatus, access PropertyAccess) (int, error)
+	BulkReassign(ctx context.Context, ownerID uuid.UUID, ids []uuid.UUID, assignedTo string, access PropertyAccess) (int, error)
 	GetSummary(ctx context.Context, ownerID uuid.UUID) (*WorkOrderSummary, error)
 	ListActivity(ctx context.Context, workOrderID uuid.UUID) ([]*MaintenanceActivity, error)
 	AddActivity(ctx context.Context, a *MaintenanceActivity) error
@@ -334,16 +336,16 @@ type WorkOrderRepository interface {
 // via the work order's own PropertyID — one hop, unlike Lease/Unit
 // which need two, since work_orders.property_id is a direct column.
 type WorkOrderService interface {
-	CreateWorkOrder(ctx context.Context, ownerID uuid.UUID, input CreateWorkOrderInput) (*WorkOrder, error)
-	GetWorkOrder(ctx context.Context, id, ownerID uuid.UUID) (*WorkOrderWithProperty, error)
+	CreateWorkOrder(ctx context.Context, ownerID uuid.UUID, input CreateWorkOrderInput, access PropertyAccess) (*WorkOrder, error)
+	GetWorkOrder(ctx context.Context, id, ownerID uuid.UUID, access PropertyAccess) (*WorkOrderWithProperty, error)
 	ListWorkOrdersForOwner(ctx context.Context, ownerID uuid.UUID, opts WorkOrderListOptions) ([]*WorkOrderWithProperty, int, error)
-	UpdateWorkOrder(ctx context.Context, id, ownerID uuid.UUID, input UpdateWorkOrderInput) (*WorkOrder, error)
-	DeleteWorkOrder(ctx context.Context, id, ownerID uuid.UUID) error
+	UpdateWorkOrder(ctx context.Context, id, ownerID uuid.UUID, input UpdateWorkOrderInput, access PropertyAccess) (*WorkOrder, error)
+	DeleteWorkOrder(ctx context.Context, id, ownerID uuid.UUID, access PropertyAccess) error
 	GetSummary(ctx context.Context, ownerID uuid.UUID) (*WorkOrderSummary, error)
-	BulkUpdateStatus(ctx context.Context, ownerID uuid.UUID, ids []uuid.UUID, status WorkOrderStatus) (int, error)
-	BulkReassign(ctx context.Context, ownerID uuid.UUID, ids []uuid.UUID, assignedTo string) (int, error)
-	ListActivity(ctx context.Context, workOrderID, ownerID uuid.UUID) ([]*MaintenanceActivity, error)
-	AddNote(ctx context.Context, workOrderID, ownerID uuid.UUID, message string, visibility MaintenanceVisibility) (*MaintenanceActivity, error)
+	BulkUpdateStatus(ctx context.Context, ownerID uuid.UUID, ids []uuid.UUID, status WorkOrderStatus, access PropertyAccess) (int, error)
+	BulkReassign(ctx context.Context, ownerID uuid.UUID, ids []uuid.UUID, assignedTo string, access PropertyAccess) (int, error)
+	ListActivity(ctx context.Context, workOrderID, ownerID uuid.UUID, access PropertyAccess) ([]*MaintenanceActivity, error)
+	AddNote(ctx context.Context, workOrderID, ownerID uuid.UUID, message string, visibility MaintenanceVisibility, access PropertyAccess) (*MaintenanceActivity, error)
 	ListRecentActivity(ctx context.Context, ownerID uuid.UUID, limit, offset int) ([]*MaintenanceActivityWithContext, error)
 }
 

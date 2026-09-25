@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link as RouterLink } from 'react-router-dom';
+import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import Alert from '@mui/material/Alert';
 import Button from '@mui/material/Button';
 import Link from '@mui/material/Link';
@@ -12,13 +12,11 @@ import ArrowForwardOutlined from '@mui/icons-material/ArrowForwardOutlined';
 import { tokens } from '@/app/tokens';
 import { useUnits } from '../hooks/useUnitsQueries';
 import { BulkAddUnitsDialog } from './BulkAddUnitsDialog';
-import { UnitDetailDrawer } from './UnitDetailDrawer';
 import { UnitFormDialog } from './UnitFormDialog';
 import { UnitsTable } from './UnitsTable';
 
 interface UnitsSectionProps {
   propertyId: string;
-  propertyName: string;
 }
 
 /**
@@ -26,14 +24,14 @@ interface UnitsSectionProps {
  * caller (PropertyDetailScreen) for residential_multi_unit, commercial,
  * and mixed_use properties; a residential_single_unit property's one
  * implicit unit isn't separately managed here (see
- * PropertyService.CreateProperty).
+ * PropertyService.CreateProperty). A row click navigates to that unit's
+ * own full page (/units/:id) rather than opening an in-place drawer.
  */
-export function UnitsSection({ propertyId, propertyName }: UnitsSectionProps) {
+export function UnitsSection({ propertyId }: UnitsSectionProps) {
+  const navigate = useNavigate();
   const { data: units, isLoading } = useUnits(propertyId);
   const [addOpen, setAddOpen] = useState(false);
   const [bulkOpen, setBulkOpen] = useState(false);
-  const [detailUnitId, setDetailUnitId] = useState<string | null>(null);
-  const [editUnitId, setEditUnitId] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; severity: 'success' | 'error' } | null>(null);
 
   return (
@@ -61,7 +59,7 @@ export function UnitsSection({ propertyId, propertyName }: UnitsSectionProps) {
         </Stack>
       </Stack>
 
-      <UnitsTable loading={isLoading} units={units ?? []} onAddUnit={() => setAddOpen(true)} onRowClick={(u) => setDetailUnitId(u.id)} />
+      <UnitsTable loading={isLoading} units={units ?? []} onAddUnit={() => setAddOpen(true)} onRowClick={(u) => navigate(`/units/${u.id}`)} />
 
       <UnitFormDialog
         open={addOpen}
@@ -80,29 +78,6 @@ export function UnitsSection({ propertyId, propertyName }: UnitsSectionProps) {
         onSaved={(count) => {
           setBulkOpen(false);
           setToast({ message: `${count} unit${count === 1 ? '' : 's'} added`, severity: 'success' });
-        }}
-      />
-
-      <UnitDetailDrawer
-        unitId={detailUnitId}
-        propertyId={propertyId}
-        propertyName={propertyName}
-        onClose={() => setDetailUnitId(null)}
-        onEdit={(id) => {
-          setDetailUnitId(null);
-          setEditUnitId(id);
-        }}
-        onDeleted={() => setToast({ message: 'Unit removed', severity: 'success' })}
-      />
-
-      <UnitFormDialog
-        open={Boolean(editUnitId)}
-        onClose={() => setEditUnitId(null)}
-        propertyId={propertyId}
-        unitId={editUnitId ?? undefined}
-        onSaved={() => {
-          setEditUnitId(null);
-          setToast({ message: 'Unit updated', severity: 'success' });
         }}
       />
 

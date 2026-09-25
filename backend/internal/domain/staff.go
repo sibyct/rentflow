@@ -52,6 +52,11 @@ const (
 // InviteTokenTTL is how long an invite link stays usable.
 const InviteTokenTTL = 7 * 24 * time.Hour
 
+// PasswordResetTokenTTL is how long an admin-triggered reset link stays
+// usable — shorter than InviteTokenTTL since it grants access to an
+// already-active account rather than just starting one.
+const PasswordResetTokenTTL = 24 * time.Hour
+
 // PropertyAccess is which of an account's properties a staff member can
 // see. All true means every property, including ones added later —
 // PropertyIDs is only meaningful when All is false. A root account (and
@@ -124,6 +129,19 @@ type InviteLookup struct {
 	Expired        bool
 }
 
+type ConfirmPasswordResetInput struct {
+	Token    string
+	Password string
+}
+
+// PasswordResetLookup is what the (unauthenticated) reset-password page
+// reads before showing its form — mirrors InviteLookup, minus the
+// role/access fields an invite needs to preview and a reset doesn't.
+type PasswordResetLookup struct {
+	Email   string
+	Expired bool
+}
+
 // StaffAuditEntry mirrors accounting's AuditEntry shape but for the
 // separate account_audit_log table — who can log in and act, not money.
 type StaffAuditEntry struct {
@@ -161,6 +179,7 @@ type StaffRepository interface {
 	// the caller's own account.
 	GetByEmail(ctx context.Context, email string) (*User, error)
 	GetByInviteTokenHash(ctx context.Context, hash string) (*User, error)
+	GetByPasswordResetTokenHash(ctx context.Context, hash string) (*User, error)
 	ListForAccount(ctx context.Context, accountOwnerID uuid.UUID) ([]*StaffMember, error)
 	// GetMember returns one member of accountOwnerID's staff list (the
 	// root row included), or ErrNotFound if userID belongs to a
@@ -171,6 +190,8 @@ type StaffRepository interface {
 	SetStatus(ctx context.Context, userID uuid.UUID, status StaffStatus, updatedAt time.Time, audit StaffAuditEntry) error
 	ResendInvite(ctx context.Context, userID uuid.UUID, tokenHash string, invitedAt, expiresAt time.Time, audit StaffAuditEntry) error
 	AcceptInvite(ctx context.Context, userID uuid.UUID, passwordHash string, acceptedAt time.Time, audit StaffAuditEntry) error
+	SetPasswordResetToken(ctx context.Context, userID uuid.UUID, tokenHash string, expiresAt time.Time, audit StaffAuditEntry) error
+	ConfirmPasswordReset(ctx context.Context, userID uuid.UUID, passwordHash string, resetAt time.Time, audit StaffAuditEntry) error
 
 	// CountActiveAdmins counts STAFF rows only (staff_role = admin,
 	// status = active) — the root account is never included, since it
@@ -179,6 +200,12 @@ type StaffRepository interface {
 	CountActiveAdmins(ctx context.Context, accountOwnerID uuid.UUID) (int, error)
 
 	ListAudit(ctx context.Context, accountOwnerID uuid.UUID, limit, offset int) ([]*StaffAuditEntry, int, error)
+
+	// GetPropertyAccess is a lightweight version of attachPropertyAccess
+	// for exactly one user — used per-request by ResolvePropertyAccess
+	// middleware, so it reads only users.all_properties plus
+	// staff_property_access, no StaffMember/property-name join.
+	GetPropertyAccess(ctx context.Context, userID uuid.UUID) (PropertyAccess, error)
 }
 
 // StaffInviteResult is exactly one of Created or Conflict — never both —
@@ -200,9 +227,25 @@ type StaffService interface {
 	Reactivate(ctx context.Context, accountOwnerID, actorID, userID uuid.UUID) error
 	ResendInvite(ctx context.Context, accountOwnerID, actorID, userID uuid.UUID) (inviteURL string, err error)
 	AuditLog(ctx context.Context, accountOwnerID uuid.UUID, limit, offset int) ([]*StaffAuditEntry, int, error)
+	// ResetPassword is admin-triggered, for a staff member who's locked
+	// themselves out — same manageable-staff/root-owner guard as
+	// Deactivate/ResendInvite, never the account owner's own row (see
+	// AcceptInvitePage's note that self-service reset isn't available
+	// yet — this only ever resets someone ELSE's password).
+	ResetPassword(ctx context.Context, accountOwnerID, actorID, userID uuid.UUID) (resetURL string, err error)
 
-	// LookupInvite / AcceptInvite are unauthenticated — reached from the
-	// link in the invite email, before the recipient has a password.
+	// LookupInvite / AcceptInvite and LookupPasswordReset /
+	// ConfirmPasswordReset are unauthenticated — reached from the link
+	// in the invite/reset email, before the recipient has signed in.
 	LookupInvite(ctx context.Context, token string) (*InviteLookup, error)
 	AcceptInvite(ctx context.Context, input AcceptInviteInput) error
+	LookupPasswordReset(ctx context.Context, token string) (*PasswordResetLookup, error)
+	ConfirmPasswordReset(ctx context.Context, input ConfirmPasswordResetInput) error
+
+	// ResolveAccess computes actorID's current property scope within
+	// accountOwnerID's account — the account owner and Admin-role staff
+	// always get AllPropertyAccess(); anyone else gets whatever
+	// GetPropertyAccess reads back for their row. Resolved fresh per
+	// request (never cached in the JWT) since access can change anytime.
+	ResolveAccess(ctx context.Context, accountOwnerID, actorID uuid.UUID) (PropertyAccess, error)
 }

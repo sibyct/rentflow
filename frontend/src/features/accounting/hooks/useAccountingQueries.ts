@@ -34,11 +34,12 @@ export function useAccountingSettings() {
   return useQuery({ queryKey: accountingQueryKeys.settings(), queryFn: () => accountingApi.getSettings() });
 }
 
-export function useRentRoll(params: RentRollParams) {
+export function useRentRoll(params: RentRollParams, options: { enabled?: boolean } = {}) {
   return useQuery({
     queryKey: accountingQueryKeys.rentRoll(params),
     queryFn: () => accountingApi.listRentRoll(params),
     placeholderData: keepPreviousData,
+    enabled: options.enabled ?? true,
   });
 }
 

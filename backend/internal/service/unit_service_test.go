@@ -125,7 +125,7 @@ func setupUnitTest(t *testing.T) (*service.UnitService, *fakePropertyRepository,
 	t.Helper()
 	propertyRepo := newFakePropertyRepository()
 	unitRepo := newFakeUnitRepository()
-	svc := service.NewUnitService(unitRepo, propertyRepo, noopLogger())
+	svc := service.NewUnitService(unitRepo, propertyRepo, newFakeUnitDocumentRepository(), newFakeAttachmentRepository(), noopLogger())
 
 	ownerID := uuid.New()
 	property := &domain.Property{
@@ -152,7 +152,7 @@ func TestUnitService_CreateUnit(t *testing.T) {
 	t.Run("valid input creates unit with default status", func(t *testing.T) {
 		svc, _, _, ownerID, property := setupUnitTest(t)
 
-		got, err := svc.CreateUnit(context.Background(), ownerID, validCreateUnitInput(property.ID))
+		got, err := svc.CreateUnit(context.Background(), ownerID, validCreateUnitInput(property.ID), domain.AllPropertyAccess())
 		if err != nil {
 			t.Fatalf("CreateUnit() unexpected error = %v", err)
 		}
@@ -164,7 +164,7 @@ func TestUnitService_CreateUnit(t *testing.T) {
 	t.Run("property belongs to a different owner reads as not found", func(t *testing.T) {
 		svc, _, _, _, property := setupUnitTest(t)
 
-		_, err := svc.CreateUnit(context.Background(), uuid.New(), validCreateUnitInput(property.ID))
+		_, err := svc.CreateUnit(context.Background(), uuid.New(), validCreateUnitInput(property.ID), domain.AllPropertyAccess())
 		if !errors.Is(err, domain.ErrNotFound) {
 			t.Fatalf("CreateUnit() error = %v, want %v", err, domain.ErrNotFound)
 		}
@@ -175,7 +175,7 @@ func TestUnitService_CreateUnit(t *testing.T) {
 
 		input := validCreateUnitInput(property.ID)
 		input.Type = "castle"
-		_, err := svc.CreateUnit(context.Background(), ownerID, input)
+		_, err := svc.CreateUnit(context.Background(), ownerID, input, domain.AllPropertyAccess())
 		if !errors.Is(err, domain.ErrInvalidInput) {
 			t.Fatalf("CreateUnit() error = %v, want %v", err, domain.ErrInvalidInput)
 		}
@@ -185,11 +185,11 @@ func TestUnitService_CreateUnit(t *testing.T) {
 		svc, _, _, ownerID, property := setupUnitTest(t)
 
 		input := validCreateUnitInput(property.ID)
-		if _, err := svc.CreateUnit(context.Background(), ownerID, input); err != nil {
+		if _, err := svc.CreateUnit(context.Background(), ownerID, input, domain.AllPropertyAccess()); err != nil {
 			t.Fatalf("CreateUnit() first call unexpected error = %v", err)
 		}
 
-		_, err := svc.CreateUnit(context.Background(), ownerID, input)
+		_, err := svc.CreateUnit(context.Background(), ownerID, input, domain.AllPropertyAccess())
 		var verrs domain.ValidationErrors
 		if !errors.As(err, &verrs) || !hasField(verrs, "unit_name") {
 			t.Fatalf("CreateUnit() error = %v, want a ValidationErrors failure for field %q", err, "unit_name")
@@ -204,7 +204,7 @@ func TestUnitService_GetUnit(t *testing.T) {
 	unitRepo.units[existing.ID] = existing
 
 	t.Run("found", func(t *testing.T) {
-		got, err := svc.GetUnit(context.Background(), existing.ID, ownerID)
+		got, err := svc.GetUnit(context.Background(), existing.ID, ownerID, domain.AllPropertyAccess())
 		if err != nil {
 			t.Fatalf("GetUnit() unexpected error = %v", err)
 		}
@@ -214,9 +214,28 @@ func TestUnitService_GetUnit(t *testing.T) {
 	})
 
 	t.Run("belongs to a property owned by someone else", func(t *testing.T) {
-		_, err := svc.GetUnit(context.Background(), existing.ID, uuid.New())
+		_, err := svc.GetUnit(context.Background(), existing.ID, uuid.New(), domain.AllPropertyAccess())
 		if !errors.Is(err, domain.ErrNotFound) {
 			t.Fatalf("GetUnit() error = %v, want %v", err, domain.ErrNotFound)
+		}
+	})
+
+	// Property-scope enforcement (Piece 1): a staff member scoped away
+	// from this unit's parent property must read it as not-found.
+	t.Run("owned but outside scoped access", func(t *testing.T) {
+		_, err := svc.GetUnit(context.Background(), existing.ID, ownerID, domain.PropertyAccess{PropertyIDs: []uuid.UUID{uuid.New()}})
+		if !errors.Is(err, domain.ErrNotFound) {
+			t.Fatalf("GetUnit() error = %v, want %v", err, domain.ErrNotFound)
+		}
+	})
+
+	t.Run("owned and within scoped access", func(t *testing.T) {
+		got, err := svc.GetUnit(context.Background(), existing.ID, ownerID, domain.PropertyAccess{PropertyIDs: []uuid.UUID{property.ID}})
+		if err != nil {
+			t.Fatalf("GetUnit() unexpected error = %v", err)
+		}
+		if got.ID != existing.ID {
+			t.Errorf("GetUnit() id = %v, want %v", got.ID, existing.ID)
 		}
 	})
 }
@@ -231,7 +250,7 @@ func TestUnitService_UpdateUnit(t *testing.T) {
 
 	t.Run("rename succeeds", func(t *testing.T) {
 		newName := "2A"
-		got, err := svc.UpdateUnit(context.Background(), existing.ID, ownerID, domain.UpdateUnitInput{UnitName: &newName})
+		got, err := svc.UpdateUnit(context.Background(), existing.ID, ownerID, domain.UpdateUnitInput{UnitName: &newName}, domain.AllPropertyAccess())
 		if err != nil {
 			t.Fatalf("UpdateUnit() unexpected error = %v", err)
 		}
@@ -242,7 +261,7 @@ func TestUnitService_UpdateUnit(t *testing.T) {
 
 	t.Run("rename to an already-taken name is rejected", func(t *testing.T) {
 		clash := "1B"
-		_, err := svc.UpdateUnit(context.Background(), existing.ID, ownerID, domain.UpdateUnitInput{UnitName: &clash})
+		_, err := svc.UpdateUnit(context.Background(), existing.ID, ownerID, domain.UpdateUnitInput{UnitName: &clash}, domain.AllPropertyAccess())
 		var verrs domain.ValidationErrors
 		if !errors.As(err, &verrs) || !hasField(verrs, "unit_name") {
 			t.Fatalf("UpdateUnit() error = %v, want a ValidationErrors failure for field %q", err, "unit_name")
@@ -251,7 +270,7 @@ func TestUnitService_UpdateUnit(t *testing.T) {
 
 	t.Run("belongs to a different owner", func(t *testing.T) {
 		newName := "3A"
-		_, err := svc.UpdateUnit(context.Background(), existing.ID, uuid.New(), domain.UpdateUnitInput{UnitName: &newName})
+		_, err := svc.UpdateUnit(context.Background(), existing.ID, uuid.New(), domain.UpdateUnitInput{UnitName: &newName}, domain.AllPropertyAccess())
 		if !errors.Is(err, domain.ErrNotFound) {
 			t.Fatalf("UpdateUnit() error = %v, want %v", err, domain.ErrNotFound)
 		}
@@ -265,7 +284,7 @@ func TestUnitService_DeleteUnit(t *testing.T) {
 	unitRepo.units[existing.ID] = existing
 
 	t.Run("belongs to a different owner", func(t *testing.T) {
-		if err := svc.DeleteUnit(context.Background(), existing.ID, uuid.New()); !errors.Is(err, domain.ErrNotFound) {
+		if err := svc.DeleteUnit(context.Background(), existing.ID, uuid.New(), domain.AllPropertyAccess()); !errors.Is(err, domain.ErrNotFound) {
 			t.Fatalf("DeleteUnit() error = %v, want %v", err, domain.ErrNotFound)
 		}
 		if _, ok := unitRepo.units[existing.ID]; !ok {
@@ -273,7 +292,7 @@ func TestUnitService_DeleteUnit(t *testing.T) {
 		}
 	})
 
-	if err := svc.DeleteUnit(context.Background(), existing.ID, ownerID); err != nil {
+	if err := svc.DeleteUnit(context.Background(), existing.ID, ownerID, domain.AllPropertyAccess()); err != nil {
 		t.Fatalf("DeleteUnit() unexpected error = %v", err)
 	}
 	if _, ok := unitRepo.units[existing.ID]; ok {
@@ -290,7 +309,7 @@ func TestUnitService_CreateUnitsBulk(t *testing.T) {
 			{UnitName: "1B", Type: domain.UnitTypeStudio},
 			{UnitName: "1C", Type: domain.UnitTypeTwoBed},
 		}
-		got, err := svc.CreateUnitsBulk(context.Background(), ownerID, property.ID, inputs)
+		got, err := svc.CreateUnitsBulk(context.Background(), ownerID, property.ID, inputs, domain.AllPropertyAccess())
 		if err != nil {
 			t.Fatalf("CreateUnitsBulk() unexpected error = %v", err)
 		}
@@ -306,7 +325,7 @@ func TestUnitService_CreateUnitsBulk(t *testing.T) {
 			{UnitName: "1A", Type: domain.UnitTypeOneBed},
 			{UnitName: "1A", Type: domain.UnitTypeStudio},
 		}
-		_, err := svc.CreateUnitsBulk(context.Background(), ownerID, property.ID, inputs)
+		_, err := svc.CreateUnitsBulk(context.Background(), ownerID, property.ID, inputs, domain.AllPropertyAccess())
 		var verrs domain.ValidationErrors
 		if !errors.As(err, &verrs) {
 			t.Fatalf("CreateUnitsBulk() error = %v, want errors.As to find domain.ValidationErrors", err)
@@ -319,7 +338,7 @@ func TestUnitService_CreateUnitsBulk(t *testing.T) {
 	t.Run("property belongs to a different owner", func(t *testing.T) {
 		svc, _, _, _, property := setupUnitTest(t)
 
-		_, err := svc.CreateUnitsBulk(context.Background(), uuid.New(), property.ID, []domain.CreateUnitInput{{UnitName: "1A", Type: domain.UnitTypeOneBed}})
+		_, err := svc.CreateUnitsBulk(context.Background(), uuid.New(), property.ID, []domain.CreateUnitInput{{UnitName: "1A", Type: domain.UnitTypeOneBed}}, domain.AllPropertyAccess())
 		if !errors.Is(err, domain.ErrNotFound) {
 			t.Fatalf("CreateUnitsBulk() error = %v, want %v", err, domain.ErrNotFound)
 		}
@@ -331,7 +350,7 @@ func TestUnitService_ListUnitsForOwner_AppliesDefaults(t *testing.T) {
 
 	unitRepo.units[uuid.New()] = &domain.Unit{ID: uuid.New(), PropertyID: property.ID, UnitName: "1A", Type: domain.UnitTypeOneBed, Status: domain.UnitStatusVacant}
 
-	units, total, err := svc.ListUnitsForOwner(context.Background(), ownerID, domain.UnitListOptions{Limit: -1, Offset: -5})
+	units, total, err := svc.ListUnitsForOwner(context.Background(), ownerID, domain.UnitListOptions{PropertyAccess: domain.AllPropertyAccess(), Limit: -1, Offset: -5})
 	if err != nil {
 		t.Fatalf("ListUnitsForOwner() unexpected error = %v", err)
 	}
@@ -347,7 +366,7 @@ func TestUnitService_GetPropertyUnitStats(t *testing.T) {
 	unitRepo.units[uuid.New()] = &domain.Unit{ID: uuid.New(), PropertyID: property.ID, UnitName: "1A", Type: domain.UnitTypeOneBed, Status: domain.UnitStatusOccupied, CurrentRent: &occupiedRent}
 	unitRepo.units[uuid.New()] = &domain.Unit{ID: uuid.New(), PropertyID: property.ID, UnitName: "1B", Type: domain.UnitTypeOneBed, Status: domain.UnitStatusVacant}
 
-	stats, err := svc.GetPropertyUnitStats(context.Background(), property.ID, ownerID)
+	stats, err := svc.GetPropertyUnitStats(context.Background(), property.ID, ownerID, domain.AllPropertyAccess())
 	if err != nil {
 		t.Fatalf("GetPropertyUnitStats() unexpected error = %v", err)
 	}
@@ -362,7 +381,7 @@ func TestUnitService_GetPropertyUnitStats(t *testing.T) {
 	}
 
 	t.Run("belongs to a different owner", func(t *testing.T) {
-		_, err := svc.GetPropertyUnitStats(context.Background(), property.ID, uuid.New())
+		_, err := svc.GetPropertyUnitStats(context.Background(), property.ID, uuid.New(), domain.AllPropertyAccess())
 		if !errors.Is(err, domain.ErrNotFound) {
 			t.Fatalf("GetPropertyUnitStats() error = %v, want %v", err, domain.ErrNotFound)
 		}

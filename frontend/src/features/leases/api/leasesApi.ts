@@ -31,6 +31,8 @@ interface LeaseWire {
   late_fee_amount?: number | null;
   late_fee_grace_days?: number | null;
   primary_resident_name: string;
+  primary_resident_phone?: string;
+  primary_resident_email?: string;
   co_residents: string[];
   emergency_contact?: string;
   renewal_status: string;
@@ -70,6 +72,8 @@ function toLeaseDetail(wire: LeaseWire): LeaseDetailWithUnitProperty {
     lateFeeAmount: wire.late_fee_amount ?? null,
     lateFeeGraceDays: wire.late_fee_grace_days ?? null,
     primaryResidentName: wire.primary_resident_name,
+    primaryResidentPhone: wire.primary_resident_phone ?? '',
+    primaryResidentEmail: wire.primary_resident_email ?? '',
     coResidents: wire.co_residents,
     emergencyContact: wire.emergency_contact ?? '',
     renewalStatus: wire.renewal_status as RenewalStatus,
@@ -106,6 +110,8 @@ export function toFormValues(detail: LeaseDetailWithUnitProperty): LeaseFormValu
     lateFeeAmount: detail.lateFeeAmount != null ? String(detail.lateFeeAmount) : '',
     lateFeeGraceDays: detail.lateFeeGraceDays != null ? String(detail.lateFeeGraceDays) : '',
     primaryResidentName: detail.primaryResidentName,
+    primaryResidentPhone: detail.primaryResidentPhone,
+    primaryResidentEmail: detail.primaryResidentEmail,
     coResidents: detail.coResidents.join(', '),
     emergencyContact: detail.emergencyContact,
     renewalStatus: detail.renewalStatus,
@@ -138,6 +144,8 @@ function toCreateLeaseRequest(values: LeaseFormValues) {
     late_fee_amount: parseNumber(values.lateFeeAmount),
     late_fee_grace_days: parseNumber(values.lateFeeGraceDays),
     primary_resident_name: values.primaryResidentName.trim(),
+    primary_resident_phone: values.primaryResidentPhone?.trim() || undefined,
+    primary_resident_email: values.primaryResidentEmail?.trim() || undefined,
     co_residents: values.coResidents
       ? values.coResidents
           .split(',')

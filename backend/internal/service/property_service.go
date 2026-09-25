@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"slices"
 	"time"
 
 	"github.com/google/uuid"
@@ -118,24 +119,39 @@ func (s *PropertyService) CreateProperty(ctx context.Context, input domain.Creat
 	return p, nil
 }
 
-func (s *PropertyService) GetProperty(ctx context.Context, id, ownerID uuid.UUID) (*domain.Property, error) {
+// requireOwnedProperty loads id, rejecting it with ErrNotFound (never
+// ErrForbidden — see PropertyService's IDOR-safety doc comment) unless
+// it belongs to ownerID AND falls within access's scope. The single
+// place every one of this service's account+scope checks goes through.
+func (s *PropertyService) requireOwnedProperty(ctx context.Context, id, ownerID uuid.UUID, access domain.PropertyAccess) (*domain.Property, error) {
+	p, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if p.OwnerID != ownerID {
+		return nil, domain.ErrNotFound
+	}
+	if !access.All && !slices.Contains(access.PropertyIDs, p.ID) {
+		return nil, domain.ErrNotFound
+	}
+	return p, nil
+}
+
+func (s *PropertyService) GetProperty(ctx context.Context, id, ownerID uuid.UUID, access domain.PropertyAccess) (*domain.Property, error) {
 	key := propertyCacheKey(id)
 
 	if s.cache != nil {
 		if cached, err := s.cache.Get(ctx, key); err == nil && cached != "" {
 			var p domain.Property
-			if err := json.Unmarshal([]byte(cached), &p); err == nil && p.OwnerID == ownerID {
+			if err := json.Unmarshal([]byte(cached), &p); err == nil && p.OwnerID == ownerID && (access.All || slices.Contains(access.PropertyIDs, p.ID)) {
 				return &p, nil
 			}
 		}
 	}
 
-	p, err := s.repo.GetByID(ctx, id)
+	p, err := s.requireOwnedProperty(ctx, id, ownerID, access)
 	if err != nil {
 		return nil, fmt.Errorf("get property %s: %w", id, err)
-	}
-	if p.OwnerID != ownerID {
-		return nil, fmt.Errorf("get property %s: %w", id, domain.ErrNotFound)
 	}
 
 	s.cacheProperty(ctx, p)
@@ -162,13 +178,10 @@ func (s *PropertyService) ListProperties(ctx context.Context, opts domain.Proper
 	return properties, total, nil
 }
 
-func (s *PropertyService) UpdateProperty(ctx context.Context, id, ownerID uuid.UUID, input domain.UpdatePropertyInput) (*domain.Property, error) {
-	p, err := s.repo.GetByID(ctx, id)
+func (s *PropertyService) UpdateProperty(ctx context.Context, id, ownerID uuid.UUID, input domain.UpdatePropertyInput, access domain.PropertyAccess) (*domain.Property, error) {
+	p, err := s.requireOwnedProperty(ctx, id, ownerID, access)
 	if err != nil {
 		return nil, fmt.Errorf("update property %s: %w", id, err)
-	}
-	if p.OwnerID != ownerID {
-		return nil, fmt.Errorf("update property %s: %w", id, domain.ErrNotFound)
 	}
 
 	var verrs domain.ValidationErrors
@@ -267,13 +280,10 @@ func (s *PropertyService) UpdateProperty(ctx context.Context, id, ownerID uuid.U
 	return p, nil
 }
 
-func (s *PropertyService) DeleteProperty(ctx context.Context, id, ownerID uuid.UUID) error {
-	p, err := s.repo.GetByID(ctx, id)
+func (s *PropertyService) DeleteProperty(ctx context.Context, id, ownerID uuid.UUID, access domain.PropertyAccess) error {
+	_, err := s.requireOwnedProperty(ctx, id, ownerID, access)
 	if err != nil {
 		return fmt.Errorf("delete property %s: %w", id, err)
-	}
-	if p.OwnerID != ownerID {
-		return fmt.Errorf("delete property %s: %w", id, domain.ErrNotFound)
 	}
 
 	if err := s.repo.Delete(ctx, id); err != nil {
@@ -285,7 +295,7 @@ func (s *PropertyService) DeleteProperty(ctx context.Context, id, ownerID uuid.U
 	return nil
 }
 
-func (s *PropertyService) BulkUpdateStatus(ctx context.Context, ownerID uuid.UUID, ids []uuid.UUID, status domain.PropertyStatus) (int, error) {
+func (s *PropertyService) BulkUpdateStatus(ctx context.Context, ownerID uuid.UUID, ids []uuid.UUID, status domain.PropertyStatus, access domain.PropertyAccess) (int, error) {
 	if len(ids) == 0 {
 		return 0, fmt.Errorf("bulk update property status: %w", domain.ValidationErrors{
 			{Field: "ids", Message: "must include at least one property id"},
@@ -297,7 +307,7 @@ func (s *PropertyService) BulkUpdateStatus(ctx context.Context, ownerID uuid.UUI
 		})
 	}
 
-	n, err := s.repo.BulkUpdateStatus(ctx, ownerID, ids, status)
+	n, err := s.repo.BulkUpdateStatus(ctx, ownerID, ids, status, access)
 	if err != nil {
 		return 0, fmt.Errorf("bulk update property status: %w", err)
 	}

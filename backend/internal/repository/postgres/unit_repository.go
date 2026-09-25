@@ -184,6 +184,10 @@ func (r *UnitRepository) ListForOwner(ctx context.Context, opts domain.UnitListO
 		args = append(args, *opts.Filter.Type)
 		where = append(where, fmt.Sprintf("u.unit_type = $%d", len(args)))
 	}
+	if !opts.PropertyAccess.All {
+		args = append(args, opts.PropertyAccess.PropertyIDs)
+		where = append(where, fmt.Sprintf("u.property_id = ANY($%d)", len(args)))
+	}
 	whereClause := strings.Join(where, " AND ")
 
 	sortColumn, ok := unitSortColumns[opts.Sort]

@@ -85,6 +85,10 @@ func (r *PropertyRepository) List(ctx context.Context, opts domain.PropertyListO
 		args = append(args, *opts.Filter.Status)
 		where = append(where, fmt.Sprintf("status = $%d", len(args)))
 	}
+	if !opts.PropertyAccess.All {
+		args = append(args, opts.PropertyAccess.PropertyIDs)
+		where = append(where, fmt.Sprintf("id = ANY($%d)", len(args)))
+	}
 	whereClause := strings.Join(where, " AND ")
 
 	sortColumn, ok := propertySortColumns[opts.Sort]
@@ -167,9 +171,17 @@ func (r *PropertyRepository) Delete(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 
-func (r *PropertyRepository) BulkUpdateStatus(ctx context.Context, ownerID uuid.UUID, ids []uuid.UUID, status domain.PropertyStatus) (int, error) {
-	const q = `UPDATE properties SET status = $1, updated_at = now() WHERE owner_id = $2 AND id = ANY($3)`
+func (r *PropertyRepository) BulkUpdateStatus(ctx context.Context, ownerID uuid.UUID, ids []uuid.UUID, status domain.PropertyStatus, access domain.PropertyAccess) (int, error) {
+	if !access.All {
+		q := `UPDATE properties SET status = $1, updated_at = now() WHERE owner_id = $2 AND id = ANY($3) AND id = ANY($4)`
+		tag, err := r.pool.Exec(ctx, q, status, ownerID, ids, access.PropertyIDs)
+		if err != nil {
+			return 0, fmt.Errorf("bulk update status for %d properties: %w", len(ids), err)
+		}
+		return int(tag.RowsAffected()), nil
+	}
 
+	const q = `UPDATE properties SET status = $1, updated_at = now() WHERE owner_id = $2 AND id = ANY($3)`
 	tag, err := r.pool.Exec(ctx, q, status, ownerID, ids)
 	if err != nil {
 		return 0, fmt.Errorf("bulk update status for %d properties: %w", len(ids), err)

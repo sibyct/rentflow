@@ -43,7 +43,8 @@ func (h *UnitHandler) Create(w http.ResponseWriter, r *http.Request) {
 	input := req.ToDomain()
 	input.PropertyID = propertyID
 
-	u, err := h.svc.CreateUnit(r.Context(), claims.UserID, input)
+	access, _ := middleware.PropertyAccessFromContext(r.Context())
+	u, err := h.svc.CreateUnit(r.Context(), claims.UserID, input, access)
 	if err != nil {
 		response.WriteError(w, r, err)
 		return
@@ -73,7 +74,8 @@ func (h *UnitHandler) BulkCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	units, err := h.svc.CreateUnitsBulk(r.Context(), claims.UserID, propertyID, req.ToDomain())
+	access, _ := middleware.PropertyAccessFromContext(r.Context())
+	units, err := h.svc.CreateUnitsBulk(r.Context(), claims.UserID, propertyID, req.ToDomain(), access)
 	if err != nil {
 		response.WriteError(w, r, err)
 		return
@@ -97,6 +99,7 @@ func (h *UnitHandler) ListForOwner(w http.ResponseWriter, r *http.Request) {
 		response.WriteError(w, r, err)
 		return
 	}
+	opts.PropertyAccess, _ = middleware.PropertyAccessFromContext(r.Context())
 
 	units, total, err := h.svc.ListUnitsForOwner(r.Context(), claims.UserID, opts)
 	if err != nil {
@@ -124,7 +127,8 @@ func (h *UnitHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	units, err := h.svc.ListUnitsByProperty(r.Context(), propertyID, claims.UserID)
+	access, _ := middleware.PropertyAccessFromContext(r.Context())
+	units, err := h.svc.ListUnitsByProperty(r.Context(), propertyID, claims.UserID, access)
 	if err != nil {
 		response.WriteError(w, r, err)
 		return
@@ -146,7 +150,8 @@ func (h *UnitHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	u, err := h.svc.GetUnit(r.Context(), id, claims.UserID)
+	access, _ := middleware.PropertyAccessFromContext(r.Context())
+	u, err := h.svc.GetUnit(r.Context(), id, claims.UserID, access)
 	if err != nil {
 		response.WriteError(w, r, err)
 		return
@@ -174,7 +179,8 @@ func (h *UnitHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	u, err := h.svc.UpdateUnit(r.Context(), id, claims.UserID, req.ToDomain())
+	access, _ := middleware.PropertyAccessFromContext(r.Context())
+	u, err := h.svc.UpdateUnit(r.Context(), id, claims.UserID, req.ToDomain(), access)
 	if err != nil {
 		response.WriteError(w, r, err)
 		return
@@ -196,7 +202,94 @@ func (h *UnitHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.svc.DeleteUnit(r.Context(), id, claims.UserID); err != nil {
+	access, _ := middleware.PropertyAccessFromContext(r.Context())
+	if err := h.svc.DeleteUnit(r.Context(), id, claims.UserID, access); err != nil {
+		response.WriteError(w, r, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *UnitHandler) ListDocuments(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.ClaimsFromContext(r.Context())
+	if !ok {
+		response.WriteError(w, r, fmt.Errorf("list unit documents: %w", domain.ErrUnauthorized))
+		return
+	}
+
+	id, err := parseUnitIDParam(r)
+	if err != nil {
+		response.WriteError(w, r, err)
+		return
+	}
+
+	access, _ := middleware.PropertyAccessFromContext(r.Context())
+	docs, err := h.svc.ListDocuments(r.Context(), id, claims.UserID, access)
+	if err != nil {
+		response.WriteError(w, r, err)
+		return
+	}
+
+	response.JSON(w, http.StatusOK, dto.NewUnitDocumentListResponse(docs))
+}
+
+func (h *UnitHandler) AddDocument(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.ClaimsFromContext(r.Context())
+	if !ok {
+		response.WriteError(w, r, fmt.Errorf("add unit document: %w", domain.ErrUnauthorized))
+		return
+	}
+
+	id, err := parseUnitIDParam(r)
+	if err != nil {
+		response.WriteError(w, r, err)
+		return
+	}
+
+	var req dto.AddUnitDocumentRequest
+	if err := decodeAndValidate(r, &req); err != nil {
+		response.WriteError(w, r, err)
+		return
+	}
+	attachmentIDStr, category := req.ToDomain()
+	attachmentID, err := uuid.Parse(attachmentIDStr)
+	if err != nil {
+		response.WriteError(w, r, fmt.Errorf("add unit document: attachment_id %q: %w", attachmentIDStr, domain.ErrInvalidInput))
+		return
+	}
+
+	access, _ := middleware.PropertyAccessFromContext(r.Context())
+	d, err := h.svc.AddDocument(r.Context(), id, claims.UserID, claims.ActorID, attachmentID, category, access)
+	if err != nil {
+		response.WriteError(w, r, err)
+		return
+	}
+
+	response.JSON(w, http.StatusCreated, dto.NewUnitDocumentResponse(d))
+}
+
+func (h *UnitHandler) DeleteDocument(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.ClaimsFromContext(r.Context())
+	if !ok {
+		response.WriteError(w, r, fmt.Errorf("delete unit document: %w", domain.ErrUnauthorized))
+		return
+	}
+
+	id, err := parseUnitIDParam(r)
+	if err != nil {
+		response.WriteError(w, r, err)
+		return
+	}
+	documentIDParam := chi.URLParam(r, "documentId")
+	documentID, err := uuid.Parse(documentIDParam)
+	if err != nil {
+		response.WriteError(w, r, fmt.Errorf("delete unit document: id %q: %w", documentIDParam, domain.ErrInvalidInput))
+		return
+	}
+
+	access, _ := middleware.PropertyAccessFromContext(r.Context())
+	if err := h.svc.DeleteDocument(r.Context(), id, documentID, claims.UserID, access); err != nil {
 		response.WriteError(w, r, err)
 		return
 	}

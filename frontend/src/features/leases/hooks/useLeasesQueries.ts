@@ -28,7 +28,7 @@ export function useLease(id: string | undefined) {
 
 // A lease change also invalidates the unit's own queries: a unit's
 // occupancy/tenant picture is tied to its active lease (see
-// UnitDetailDrawer's lease cross-link), and the global Units page's
+// UnitDetailScreen's lease cross-link), and the global Units page's
 // stats read from the same underlying data.
 function invalidateAfterLeaseChange(queryClient: QueryClient, unitId: string) {
   void queryClient.invalidateQueries({ queryKey: leasesQueryKeys.all });

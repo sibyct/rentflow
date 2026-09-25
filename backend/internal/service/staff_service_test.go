@@ -14,17 +14,19 @@ import (
 // fakeStaffRepo is a minimal in-memory domain.StaffRepository for
 // exercising StaffService's business rules without a database.
 type fakeStaffRepo struct {
-	users            map[uuid.UUID]*domain.User
-	access           map[uuid.UUID][]uuid.UUID // userID -> property ids, when not all
-	audit            []*domain.StaffAuditEntry
-	invitedTokenHash map[uuid.UUID]string
+	users                  map[uuid.UUID]*domain.User
+	access                 map[uuid.UUID][]uuid.UUID // userID -> property ids, when not all
+	audit                  []*domain.StaffAuditEntry
+	invitedTokenHash       map[uuid.UUID]string
+	passwordResetTokenHash map[uuid.UUID]string
 }
 
 func newFakeStaffRepo(root *domain.User) *fakeStaffRepo {
 	return &fakeStaffRepo{
-		users:            map[uuid.UUID]*domain.User{root.ID: root},
-		access:           map[uuid.UUID][]uuid.UUID{},
-		invitedTokenHash: map[uuid.UUID]string{},
+		users:                  map[uuid.UUID]*domain.User{root.ID: root},
+		access:                 map[uuid.UUID][]uuid.UUID{},
+		invitedTokenHash:       map[uuid.UUID]string{},
+		passwordResetTokenHash: map[uuid.UUID]string{},
 	}
 }
 
@@ -71,6 +73,16 @@ func (f *fakeStaffRepo) GetByInviteTokenHash(_ context.Context, hash string) (*d
 	return nil, domain.ErrNotFound
 }
 
+func (f *fakeStaffRepo) GetByPasswordResetTokenHash(_ context.Context, hash string) (*domain.User, error) {
+	for id, h := range f.passwordResetTokenHash {
+		if h == hash && h != "" {
+			cp := *f.users[id]
+			return &cp, nil
+		}
+	}
+	return nil, domain.ErrNotFound
+}
+
 func (f *fakeStaffRepo) ListForAccount(_ context.Context, accountOwnerID uuid.UUID) ([]*domain.StaffMember, error) {
 	var out []*domain.StaffMember
 	for _, u := range f.users {
@@ -87,6 +99,14 @@ func (f *fakeStaffRepo) GetMember(_ context.Context, accountOwnerID, userID uuid
 		return nil, domain.ErrNotFound
 	}
 	return f.toMember(u), nil
+}
+
+func (f *fakeStaffRepo) GetPropertyAccess(_ context.Context, userID uuid.UUID) (domain.PropertyAccess, error) {
+	u, ok := f.users[userID]
+	if !ok {
+		return domain.PropertyAccess{}, domain.ErrNotFound
+	}
+	return f.toMember(u).PropertyAccess, nil
 }
 
 func (f *fakeStaffRepo) toMember(u *domain.User) *domain.StaffMember {
@@ -147,6 +167,32 @@ func (f *fakeStaffRepo) AcceptInvite(_ context.Context, userID uuid.UUID, passwo
 	u.InviteExpiresAt = nil
 	u.UpdatedAt = acceptedAt
 	delete(f.invitedTokenHash, userID)
+	f.audit = append(f.audit, &audit)
+	return nil
+}
+
+func (f *fakeStaffRepo) SetPasswordResetToken(_ context.Context, userID uuid.UUID, tokenHash string, expiresAt time.Time, audit domain.StaffAuditEntry) error {
+	u, ok := f.users[userID]
+	if !ok || u.AccountOwnerID == nil {
+		return domain.ErrNotFound
+	}
+	u.PasswordResetTokenHash = tokenHash
+	u.PasswordResetExpiresAt = &expiresAt
+	f.passwordResetTokenHash[userID] = tokenHash
+	f.audit = append(f.audit, &audit)
+	return nil
+}
+
+func (f *fakeStaffRepo) ConfirmPasswordReset(_ context.Context, userID uuid.UUID, passwordHash string, resetAt time.Time, audit domain.StaffAuditEntry) error {
+	u, ok := f.users[userID]
+	if !ok {
+		return domain.ErrNotFound
+	}
+	u.PasswordHash = passwordHash
+	u.PasswordResetTokenHash = ""
+	u.PasswordResetExpiresAt = nil
+	u.UpdatedAt = resetAt
+	delete(f.passwordResetTokenHash, userID)
 	f.audit = append(f.audit, &audit)
 	return nil
 }
@@ -426,5 +472,108 @@ func TestStaffService_LookupInvite_Expired(t *testing.T) {
 	err = svc.AcceptInvite(context.Background(), domain.AcceptInviteInput{Token: rawToken, Password: "a-strong-password"})
 	if !errors.Is(err, domain.ErrConflict) {
 		t.Errorf("accepting an expired invite: err = %v, want ErrConflict", err)
+	}
+}
+
+func TestStaffService_ResetPassword(t *testing.T) {
+	svc, repo, accountID := newStaffTestFixture(t)
+	staffID := inviteAdmin(t, svc, repo, accountID, "Priya Shah", "priya@example.com")
+	oldHash := repo.users[staffID].PasswordHash
+
+	t.Run("root can trigger a reset for an active staff member", func(t *testing.T) {
+		resetURL, err := svc.ResetPassword(context.Background(), accountID, accountID, staffID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if resetURL == "" {
+			t.Fatal("expected a non-empty reset URL")
+		}
+		rawToken := resetURL[len(resetURL)-64:]
+
+		lookup, err := svc.LookupPasswordReset(context.Background(), rawToken)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if lookup.Email != "priya@example.com" || lookup.Expired {
+			t.Errorf("lookup = %+v", lookup)
+		}
+
+		if err := svc.ConfirmPasswordReset(context.Background(), domain.ConfirmPasswordResetInput{Token: rawToken, Password: "a-new-strong-password"}); err != nil {
+			t.Fatal(err)
+		}
+		if repo.users[staffID].PasswordHash == oldHash {
+			t.Error("password hash did not change after confirming the reset")
+		}
+		if repo.users[staffID].PasswordResetTokenHash != "" {
+			t.Error("expected the reset token to be cleared after use")
+		}
+
+		t.Run("the used token can't be reused", func(t *testing.T) {
+			err := svc.ConfirmPasswordReset(context.Background(), domain.ConfirmPasswordResetInput{Token: rawToken, Password: "yet-another-password"})
+			if !errors.Is(err, domain.ErrNotFound) {
+				t.Errorf("err = %v, want ErrNotFound (token already cleared)", err)
+			}
+		})
+	})
+
+	t.Run("a short new password is rejected", func(t *testing.T) {
+		resetURL, err := svc.ResetPassword(context.Background(), accountID, accountID, staffID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rawToken := resetURL[len(resetURL)-64:]
+
+		err = svc.ConfirmPasswordReset(context.Background(), domain.ConfirmPasswordResetInput{Token: rawToken, Password: "short"})
+		var verrs domain.ValidationErrors
+		if !errors.As(err, &verrs) {
+			t.Fatalf("err = %v, want ValidationErrors", err)
+		}
+	})
+
+	t.Run("an invited (not yet active) user can't have their password reset", func(t *testing.T) {
+		result, err := svc.Invite(context.Background(), accountID, accountID, domain.InviteStaffInput{
+			Name: "Owen Park", Email: "owen.reset@example.com", Role: domain.StaffRolePropertyManager, PropertyAccess: domain.AllPropertyAccess(),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = svc.ResetPassword(context.Background(), accountID, accountID, result.Created.ID)
+		if !errors.Is(err, domain.ErrConflict) {
+			t.Errorf("err = %v, want ErrConflict", err)
+		}
+	})
+
+	t.Run("the root account owner is never a manageable target", func(t *testing.T) {
+		_, err := svc.ResetPassword(context.Background(), accountID, accountID, accountID)
+		if !errors.Is(err, domain.ErrConflict) {
+			t.Errorf("err = %v, want ErrConflict", err)
+		}
+	})
+}
+
+func TestStaffService_LookupPasswordReset_Expired(t *testing.T) {
+	svc, repo, accountID := newStaffTestFixture(t)
+	staffID := inviteAdmin(t, svc, repo, accountID, "Priya Shah", "priya@example.com")
+
+	resetURL, err := svc.ResetPassword(context.Background(), accountID, accountID, staffID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rawToken := resetURL[len(resetURL)-64:]
+
+	// Jump the clock past the 24-hour expiry.
+	svc.now = fixedClock(day(2026, time.September, 24))
+
+	lookup, err := svc.LookupPasswordReset(context.Background(), rawToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !lookup.Expired {
+		t.Error("expected the reset link to show as expired")
+	}
+
+	err = svc.ConfirmPasswordReset(context.Background(), domain.ConfirmPasswordResetInput{Token: rawToken, Password: "a-strong-password"})
+	if !errors.Is(err, domain.ErrConflict) {
+		t.Errorf("confirming an expired reset: err = %v, want ErrConflict", err)
 	}
 }

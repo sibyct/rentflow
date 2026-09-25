@@ -41,27 +41,33 @@ func NewStaffService(repo domain.StaffRepository, propertyRepo domain.PropertyRe
 
 var _ domain.StaffService = (*StaffService)(nil)
 
-// generateInviteToken returns the raw token (goes in the email link,
-// never stored) and its SHA-256 hex hash (stored, compared against on
-// lookup) — the same "never store the secret itself" split a password
-// hash already uses.
-func generateInviteToken() (raw, hash string, err error) {
+// generateSecureToken returns a raw token (goes in an email link, never
+// stored) and its SHA-256 hex hash (stored, compared against on lookup)
+// — the same "never store the secret itself" split a password hash
+// already uses. Shared by invites and password resets — both are just
+// "a random token that proves whoever clicked the link owns this
+// inbox," with different TTLs and a different column pair to land in.
+func generateSecureToken() (raw, hash string, err error) {
 	buf := make([]byte, 32)
 	if _, err := rand.Read(buf); err != nil {
-		return "", "", fmt.Errorf("generate invite token: %w", err)
+		return "", "", fmt.Errorf("generate token: %w", err)
 	}
 	raw = hex.EncodeToString(buf)
 	sum := sha256.Sum256([]byte(raw))
 	return raw, hex.EncodeToString(sum[:]), nil
 }
 
-func hashInviteToken(raw string) string {
+func hashToken(raw string) string {
 	sum := sha256.Sum256([]byte(raw))
 	return hex.EncodeToString(sum[:])
 }
 
 func (s *StaffService) inviteURL(rawToken string) string {
 	return fmt.Sprintf("%s/accept-invite?token=%s", strings.TrimRight(s.publicAppURL, "/"), rawToken)
+}
+
+func (s *StaffService) passwordResetURL(rawToken string) string {
+	return fmt.Sprintf("%s/reset-password?token=%s", strings.TrimRight(s.publicAppURL, "/"), rawToken)
 }
 
 func validatePropertyAccess(role domain.StaffRole, access *domain.PropertyAccess, propertyNames map[uuid.UUID]string) domain.ValidationErrors {
@@ -153,7 +159,7 @@ func (s *StaffService) Invite(ctx context.Context, accountOwnerID, actorID uuid.
 	}
 
 	now := s.now()
-	rawToken, hash, err := generateInviteToken()
+	rawToken, hash, err := generateSecureToken()
 	if err != nil {
 		return nil, fmt.Errorf("invite staff: %w", err)
 	}
@@ -205,6 +211,19 @@ func (s *StaffService) enqueueInviteEmail(ctx context.Context, accountOwnerID uu
 	}
 }
 
+func (s *StaffService) enqueuePasswordResetEmail(ctx context.Context, accountOwnerID uuid.UUID, u *domain.User, url string) {
+	if !s.mailEnabled {
+		return
+	}
+	body := fmt.Sprintf(`<p>Hello %s,</p><p>An account admin reset your RentFlow password.</p><p><a href="%s">Set a new password</a></p><p>This link expires in 24 hours. If you didn't expect this, contact your account admin.</p>`,
+		htmlEscape(u.Name), url)
+	if err := s.outbox.Enqueue(ctx, &domain.OutboxEmail{
+		ID: uuid.New(), OwnerID: accountOwnerID, To: u.Email, Subject: "Reset your RentFlow password", HTML: body, CreatedAt: s.now(),
+	}); err != nil {
+		s.log.WarnContext(ctx, "failed to queue password reset email", slog.String("user_id", u.ID.String()), slog.Any("error", err))
+	}
+}
+
 func roleLabel(r domain.StaffRole) string {
 	switch r {
 	case domain.StaffRoleAdmin:
@@ -231,6 +250,22 @@ func (s *StaffService) List(ctx context.Context, accountOwnerID uuid.UUID) ([]*d
 		return nil, fmt.Errorf("list staff: %w", err)
 	}
 	return members, nil
+}
+
+// ResolveAccess computes actorID's current property scope, checked
+// fresh against the database every call — StaffRole on the JWT can't be
+// trusted for this (access can change between token issuance and this
+// request, same reasoning as why property access is never baked into
+// the token in the first place). accountOwnerID isn't used in the
+// lookup itself (actorID alone identifies the row; the JWT already
+// binds the two together), but stays a parameter to match every other
+// StaffService method's signature.
+func (s *StaffService) ResolveAccess(ctx context.Context, accountOwnerID, actorID uuid.UUID) (domain.PropertyAccess, error) {
+	access, err := s.repo.GetPropertyAccess(ctx, actorID)
+	if err != nil {
+		return domain.PropertyAccess{}, fmt.Errorf("resolve property access: %w", err)
+	}
+	return access, nil
 }
 
 // requireManageableStaff loads userID as a member of accountOwnerID's
@@ -386,7 +421,7 @@ func (s *StaffService) ResendInvite(ctx context.Context, accountOwnerID, actorID
 	}
 
 	now := s.now()
-	rawToken, hash, err := generateInviteToken()
+	rawToken, hash, err := generateSecureToken()
 	if err != nil {
 		return "", fmt.Errorf("resend invite for %s: %w", userID, err)
 	}
@@ -399,6 +434,35 @@ func (s *StaffService) ResendInvite(ctx context.Context, accountOwnerID, actorID
 	url := s.inviteURL(rawToken)
 	role := member.EffectiveRole()
 	s.enqueueInviteEmail(ctx, accountOwnerID, &domain.User{ID: userID, Email: member.Email, Name: member.Name, StaffRole: &role}, url)
+	return url, nil
+}
+
+// ResetPassword is admin-triggered, for a staff member locked out of
+// their own account — only meaningful for someone who already has a
+// password to lose, so (unlike ResendInvite) it requires Active status:
+// an invited user should be re-invited, not "password reset".
+func (s *StaffService) ResetPassword(ctx context.Context, accountOwnerID, actorID, userID uuid.UUID) (string, error) {
+	member, err := s.requireManageableStaff(ctx, accountOwnerID, userID)
+	if err != nil {
+		return "", fmt.Errorf("reset password for %s: %w", userID, err)
+	}
+	if member.Status != domain.StaffStatusActive {
+		return "", fmt.Errorf("reset password for %s: %w", userID, domain.ErrConflict)
+	}
+
+	now := s.now()
+	rawToken, hash, err := generateSecureToken()
+	if err != nil {
+		return "", fmt.Errorf("reset password for %s: %w", userID, err)
+	}
+	expiresAt := now.Add(domain.PasswordResetTokenTTL)
+	audit := domain.NewStaffAuditEntry(accountOwnerID, actorID, "password_reset_sent", &userID, member.Name, nil, now)
+	if err := s.repo.SetPasswordResetToken(ctx, userID, hash, expiresAt, audit); err != nil {
+		return "", fmt.Errorf("reset password for %s: %w", userID, err)
+	}
+
+	url := s.passwordResetURL(rawToken)
+	s.enqueuePasswordResetEmail(ctx, accountOwnerID, &domain.User{ID: userID, Email: member.Email, Name: member.Name}, url)
 	return url, nil
 }
 
@@ -415,7 +479,7 @@ func (s *StaffService) LookupInvite(ctx context.Context, token string) (*domain.
 	if token == "" {
 		return nil, fmt.Errorf("lookup invite: %w", domain.ErrNotFound)
 	}
-	u, err := s.repo.GetByInviteTokenHash(ctx, hashInviteToken(token))
+	u, err := s.repo.GetByInviteTokenHash(ctx, hashToken(token))
 	if err != nil {
 		return nil, fmt.Errorf("lookup invite: %w", err)
 	}
@@ -441,7 +505,7 @@ func (s *StaffService) AcceptInvite(ctx context.Context, input domain.AcceptInvi
 			{Field: "password", Message: fmt.Sprintf("must be at least %d characters", minStaffPasswordLength)},
 		})
 	}
-	u, err := s.repo.GetByInviteTokenHash(ctx, hashInviteToken(input.Token))
+	u, err := s.repo.GetByInviteTokenHash(ctx, hashToken(input.Token))
 	if err != nil {
 		return fmt.Errorf("accept invite: %w", err)
 	}
@@ -460,6 +524,47 @@ func (s *StaffService) AcceptInvite(ctx context.Context, input domain.AcceptInvi
 	audit := domain.NewStaffAuditEntry(u.AccountID(), u.ID, "invite_accepted", &u.ID, u.Name, nil, now)
 	if err := s.repo.AcceptInvite(ctx, u.ID, string(hash), now, audit); err != nil {
 		return fmt.Errorf("accept invite: %w", err)
+	}
+	return nil
+}
+
+func (s *StaffService) LookupPasswordReset(ctx context.Context, token string) (*domain.PasswordResetLookup, error) {
+	if token == "" {
+		return nil, fmt.Errorf("lookup password reset: %w", domain.ErrNotFound)
+	}
+	u, err := s.repo.GetByPasswordResetTokenHash(ctx, hashToken(token))
+	if err != nil {
+		return nil, fmt.Errorf("lookup password reset: %w", err)
+	}
+	now := s.now()
+	return &domain.PasswordResetLookup{
+		Email:   u.Email,
+		Expired: u.PasswordResetExpiresAt != nil && u.PasswordResetExpiresAt.Before(now),
+	}, nil
+}
+
+func (s *StaffService) ConfirmPasswordReset(ctx context.Context, input domain.ConfirmPasswordResetInput) error {
+	if len(input.Password) < minStaffPasswordLength {
+		return fmt.Errorf("confirm password reset: %w", domain.ValidationErrors{
+			{Field: "password", Message: fmt.Sprintf("must be at least %d characters", minStaffPasswordLength)},
+		})
+	}
+	u, err := s.repo.GetByPasswordResetTokenHash(ctx, hashToken(input.Token))
+	if err != nil {
+		return fmt.Errorf("confirm password reset: %w", err)
+	}
+	now := s.now()
+	if u.PasswordResetExpiresAt == nil || u.PasswordResetExpiresAt.Before(now) {
+		return fmt.Errorf("confirm password reset: this link has expired: %w", domain.ErrConflict)
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("confirm password reset: hash password: %w", err)
+	}
+	audit := domain.NewStaffAuditEntry(u.AccountID(), u.ID, "password_reset_confirmed", &u.ID, u.Name, nil, now)
+	if err := s.repo.ConfirmPasswordReset(ctx, u.ID, string(hash), now, audit); err != nil {
+		return fmt.Errorf("confirm password reset: %w", err)
 	}
 	return nil
 }

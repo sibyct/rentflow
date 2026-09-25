@@ -105,7 +105,7 @@ func TestLeaseService_CreateLease(t *testing.T) {
 	t.Run("valid input creates an active lease by default", func(t *testing.T) {
 		svc, _, ownerID, unit := setupLeaseTest(t)
 
-		got, err := svc.CreateLease(context.Background(), ownerID, validCreateLeaseInput(unit.ID))
+		got, err := svc.CreateLease(context.Background(), ownerID, validCreateLeaseInput(unit.ID), domain.AllPropertyAccess())
 		if err != nil {
 			t.Fatalf("CreateLease() unexpected error = %v", err)
 		}
@@ -120,7 +120,7 @@ func TestLeaseService_CreateLease(t *testing.T) {
 	t.Run("unit belongs to a different owner reads as not found", func(t *testing.T) {
 		svc, _, _, unit := setupLeaseTest(t)
 
-		_, err := svc.CreateLease(context.Background(), uuid.New(), validCreateLeaseInput(unit.ID))
+		_, err := svc.CreateLease(context.Background(), uuid.New(), validCreateLeaseInput(unit.ID), domain.AllPropertyAccess())
 		if !errors.Is(err, domain.ErrNotFound) {
 			t.Fatalf("CreateLease() error = %v, want %v", err, domain.ErrNotFound)
 		}
@@ -131,7 +131,7 @@ func TestLeaseService_CreateLease(t *testing.T) {
 
 		input := validCreateLeaseInput(unit.ID)
 		input.EndDate = nil
-		_, err := svc.CreateLease(context.Background(), ownerID, input)
+		_, err := svc.CreateLease(context.Background(), ownerID, input, domain.AllPropertyAccess())
 		var verrs domain.ValidationErrors
 		if !errors.As(err, &verrs) || !hasField(verrs, "end_date") {
 			t.Fatalf("CreateLease() error = %v, want a ValidationErrors failure for field %q", err, "end_date")
@@ -144,7 +144,7 @@ func TestLeaseService_CreateLease(t *testing.T) {
 		input := validCreateLeaseInput(unit.ID)
 		input.Type = domain.LeaseTypeMonthToMonth
 		input.EndDate = nil
-		if _, err := svc.CreateLease(context.Background(), ownerID, input); err != nil {
+		if _, err := svc.CreateLease(context.Background(), ownerID, input, domain.AllPropertyAccess()); err != nil {
 			t.Fatalf("CreateLease() unexpected error = %v", err)
 		}
 	})
@@ -152,11 +152,11 @@ func TestLeaseService_CreateLease(t *testing.T) {
 	t.Run("a second active lease on the same unit is rejected", func(t *testing.T) {
 		svc, _, ownerID, unit := setupLeaseTest(t)
 
-		if _, err := svc.CreateLease(context.Background(), ownerID, validCreateLeaseInput(unit.ID)); err != nil {
+		if _, err := svc.CreateLease(context.Background(), ownerID, validCreateLeaseInput(unit.ID), domain.AllPropertyAccess()); err != nil {
 			t.Fatalf("CreateLease() first call unexpected error = %v", err)
 		}
 
-		_, err := svc.CreateLease(context.Background(), ownerID, validCreateLeaseInput(unit.ID))
+		_, err := svc.CreateLease(context.Background(), ownerID, validCreateLeaseInput(unit.ID), domain.AllPropertyAccess())
 		var verrs domain.ValidationErrors
 		if !errors.As(err, &verrs) || !hasField(verrs, "status") {
 			t.Fatalf("CreateLease() error = %v, want a ValidationErrors failure for field %q", err, "status")
@@ -166,13 +166,13 @@ func TestLeaseService_CreateLease(t *testing.T) {
 	t.Run("a draft lease does not conflict with an active one", func(t *testing.T) {
 		svc, _, ownerID, unit := setupLeaseTest(t)
 
-		if _, err := svc.CreateLease(context.Background(), ownerID, validCreateLeaseInput(unit.ID)); err != nil {
+		if _, err := svc.CreateLease(context.Background(), ownerID, validCreateLeaseInput(unit.ID), domain.AllPropertyAccess()); err != nil {
 			t.Fatalf("CreateLease() first call unexpected error = %v", err)
 		}
 
 		draft := validCreateLeaseInput(unit.ID)
 		draft.Status = domain.LeaseStatusDraft
-		if _, err := svc.CreateLease(context.Background(), ownerID, draft); err != nil {
+		if _, err := svc.CreateLease(context.Background(), ownerID, draft, domain.AllPropertyAccess()); err != nil {
 			t.Fatalf("CreateLease() draft lease unexpected error = %v", err)
 		}
 	})
@@ -181,13 +181,13 @@ func TestLeaseService_CreateLease(t *testing.T) {
 func TestLeaseService_GetLease(t *testing.T) {
 	svc, _, ownerID, unit := setupLeaseTest(t)
 
-	created, err := svc.CreateLease(context.Background(), ownerID, validCreateLeaseInput(unit.ID))
+	created, err := svc.CreateLease(context.Background(), ownerID, validCreateLeaseInput(unit.ID), domain.AllPropertyAccess())
 	if err != nil {
 		t.Fatalf("CreateLease() unexpected error = %v", err)
 	}
 
 	t.Run("found includes unit and property context", func(t *testing.T) {
-		got, err := svc.GetLease(context.Background(), created.ID, ownerID)
+		got, err := svc.GetLease(context.Background(), created.ID, ownerID, domain.AllPropertyAccess())
 		if err != nil {
 			t.Fatalf("GetLease() unexpected error = %v", err)
 		}
@@ -197,9 +197,28 @@ func TestLeaseService_GetLease(t *testing.T) {
 	})
 
 	t.Run("belongs to a different owner", func(t *testing.T) {
-		_, err := svc.GetLease(context.Background(), created.ID, uuid.New())
+		_, err := svc.GetLease(context.Background(), created.ID, uuid.New(), domain.AllPropertyAccess())
 		if !errors.Is(err, domain.ErrNotFound) {
 			t.Fatalf("GetLease() error = %v, want %v", err, domain.ErrNotFound)
+		}
+	})
+
+	// Property-scope enforcement (Piece 1): a staff member scoped away
+	// from this lease's unit's parent property must read it as not-found.
+	t.Run("owned but outside scoped access", func(t *testing.T) {
+		_, err := svc.GetLease(context.Background(), created.ID, ownerID, domain.PropertyAccess{PropertyIDs: []uuid.UUID{uuid.New()}})
+		if !errors.Is(err, domain.ErrNotFound) {
+			t.Fatalf("GetLease() error = %v, want %v", err, domain.ErrNotFound)
+		}
+	})
+
+	t.Run("owned and within scoped access", func(t *testing.T) {
+		got, err := svc.GetLease(context.Background(), created.ID, ownerID, domain.PropertyAccess{PropertyIDs: []uuid.UUID{unit.PropertyID}})
+		if err != nil {
+			t.Fatalf("GetLease() unexpected error = %v", err)
+		}
+		if got.ID != created.ID {
+			t.Errorf("GetLease() id = %v, want %v", got.ID, created.ID)
 		}
 	})
 }
@@ -207,14 +226,14 @@ func TestLeaseService_GetLease(t *testing.T) {
 func TestLeaseService_UpdateLease(t *testing.T) {
 	svc, _, ownerID, unit := setupLeaseTest(t)
 
-	created, err := svc.CreateLease(context.Background(), ownerID, validCreateLeaseInput(unit.ID))
+	created, err := svc.CreateLease(context.Background(), ownerID, validCreateLeaseInput(unit.ID), domain.AllPropertyAccess())
 	if err != nil {
 		t.Fatalf("CreateLease() unexpected error = %v", err)
 	}
 
 	t.Run("terminate an active lease", func(t *testing.T) {
 		terminated := domain.LeaseStatusTerminated
-		got, err := svc.UpdateLease(context.Background(), created.ID, ownerID, domain.UpdateLeaseInput{Status: &terminated})
+		got, err := svc.UpdateLease(context.Background(), created.ID, ownerID, domain.UpdateLeaseInput{Status: &terminated}, domain.AllPropertyAccess())
 		if err != nil {
 			t.Fatalf("UpdateLease() unexpected error = %v", err)
 		}
@@ -225,7 +244,7 @@ func TestLeaseService_UpdateLease(t *testing.T) {
 
 	t.Run("belongs to a different owner", func(t *testing.T) {
 		rent := 1600.0
-		_, err := svc.UpdateLease(context.Background(), created.ID, uuid.New(), domain.UpdateLeaseInput{MonthlyRent: &rent})
+		_, err := svc.UpdateLease(context.Background(), created.ID, uuid.New(), domain.UpdateLeaseInput{MonthlyRent: &rent}, domain.AllPropertyAccess())
 		if !errors.Is(err, domain.ErrNotFound) {
 			t.Fatalf("UpdateLease() error = %v, want %v", err, domain.ErrNotFound)
 		}
@@ -233,7 +252,7 @@ func TestLeaseService_UpdateLease(t *testing.T) {
 
 	t.Run("empty primary resident name is rejected", func(t *testing.T) {
 		empty := ""
-		_, err := svc.UpdateLease(context.Background(), created.ID, ownerID, domain.UpdateLeaseInput{PrimaryResidentName: &empty})
+		_, err := svc.UpdateLease(context.Background(), created.ID, ownerID, domain.UpdateLeaseInput{PrimaryResidentName: &empty}, domain.AllPropertyAccess())
 		if !errors.Is(err, domain.ErrInvalidInput) {
 			t.Fatalf("UpdateLease() error = %v, want %v", err, domain.ErrInvalidInput)
 		}
@@ -243,13 +262,13 @@ func TestLeaseService_UpdateLease(t *testing.T) {
 func TestLeaseService_DeleteLease(t *testing.T) {
 	svc, leaseRepo, ownerID, unit := setupLeaseTest(t)
 
-	created, err := svc.CreateLease(context.Background(), ownerID, validCreateLeaseInput(unit.ID))
+	created, err := svc.CreateLease(context.Background(), ownerID, validCreateLeaseInput(unit.ID), domain.AllPropertyAccess())
 	if err != nil {
 		t.Fatalf("CreateLease() unexpected error = %v", err)
 	}
 
 	t.Run("belongs to a different owner", func(t *testing.T) {
-		if err := svc.DeleteLease(context.Background(), created.ID, uuid.New()); !errors.Is(err, domain.ErrNotFound) {
+		if err := svc.DeleteLease(context.Background(), created.ID, uuid.New(), domain.AllPropertyAccess()); !errors.Is(err, domain.ErrNotFound) {
 			t.Fatalf("DeleteLease() error = %v, want %v", err, domain.ErrNotFound)
 		}
 		if _, ok := leaseRepo.leases[created.ID]; !ok {
@@ -257,7 +276,7 @@ func TestLeaseService_DeleteLease(t *testing.T) {
 		}
 	})
 
-	if err := svc.DeleteLease(context.Background(), created.ID, ownerID); err != nil {
+	if err := svc.DeleteLease(context.Background(), created.ID, ownerID, domain.AllPropertyAccess()); err != nil {
 		t.Fatalf("DeleteLease() unexpected error = %v", err)
 	}
 	if _, ok := leaseRepo.leases[created.ID]; ok {

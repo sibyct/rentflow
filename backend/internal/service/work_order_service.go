@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"time"
 
 	"github.com/google/uuid"
@@ -54,8 +55,8 @@ func (s *WorkOrderService) syncExpense(ctx context.Context, ownerID uuid.UUID, w
 
 var _ domain.WorkOrderService = (*WorkOrderService)(nil)
 
-func (s *WorkOrderService) CreateWorkOrder(ctx context.Context, ownerID uuid.UUID, input domain.CreateWorkOrderInput) (*domain.WorkOrder, error) {
-	if _, err := s.requireOwnedProperty(ctx, input.PropertyID, ownerID); err != nil {
+func (s *WorkOrderService) CreateWorkOrder(ctx context.Context, ownerID uuid.UUID, input domain.CreateWorkOrderInput, access domain.PropertyAccess) (*domain.WorkOrder, error) {
+	if _, err := s.requireOwnedProperty(ctx, input.PropertyID, ownerID, access); err != nil {
 		return nil, fmt.Errorf("create work order: %w", err)
 	}
 	if err := s.validateUnitBelongsToProperty(ctx, input.UnitID, input.PropertyID); err != nil {
@@ -137,12 +138,12 @@ func (s *WorkOrderService) CreateWorkOrder(ctx context.Context, ownerID uuid.UUI
 	return w, nil
 }
 
-func (s *WorkOrderService) GetWorkOrder(ctx context.Context, id, ownerID uuid.UUID) (*domain.WorkOrderWithProperty, error) {
+func (s *WorkOrderService) GetWorkOrder(ctx context.Context, id, ownerID uuid.UUID, access domain.PropertyAccess) (*domain.WorkOrderWithProperty, error) {
 	w, err := s.repo.GetByID(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("get work order %s: %w", id, err)
 	}
-	p, err := s.requireOwnedProperty(ctx, w.PropertyID, ownerID)
+	p, err := s.requireOwnedProperty(ctx, w.PropertyID, ownerID, access)
 	if err != nil {
 		return nil, fmt.Errorf("get work order %s: %w", id, err)
 	}
@@ -172,12 +173,12 @@ func (s *WorkOrderService) ListWorkOrdersForOwner(ctx context.Context, ownerID u
 	return orders, total, nil
 }
 
-func (s *WorkOrderService) UpdateWorkOrder(ctx context.Context, id, ownerID uuid.UUID, input domain.UpdateWorkOrderInput) (*domain.WorkOrder, error) {
+func (s *WorkOrderService) UpdateWorkOrder(ctx context.Context, id, ownerID uuid.UUID, input domain.UpdateWorkOrderInput, access domain.PropertyAccess) (*domain.WorkOrder, error) {
 	w, err := s.repo.GetByID(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("update work order %s: %w", id, err)
 	}
-	if _, err := s.requireOwnedProperty(ctx, w.PropertyID, ownerID); err != nil {
+	if _, err := s.requireOwnedProperty(ctx, w.PropertyID, ownerID, access); err != nil {
 		return nil, fmt.Errorf("update work order %s: %w", id, err)
 	}
 
@@ -334,12 +335,12 @@ func (s *WorkOrderService) UpdateWorkOrder(ctx context.Context, id, ownerID uuid
 	return w, nil
 }
 
-func (s *WorkOrderService) DeleteWorkOrder(ctx context.Context, id, ownerID uuid.UUID) error {
+func (s *WorkOrderService) DeleteWorkOrder(ctx context.Context, id, ownerID uuid.UUID, access domain.PropertyAccess) error {
 	w, err := s.repo.GetByID(ctx, id)
 	if err != nil {
 		return fmt.Errorf("delete work order %s: %w", id, err)
 	}
-	if _, err := s.requireOwnedProperty(ctx, w.PropertyID, ownerID); err != nil {
+	if _, err := s.requireOwnedProperty(ctx, w.PropertyID, ownerID, access); err != nil {
 		return fmt.Errorf("delete work order %s: %w", id, err)
 	}
 
@@ -357,7 +358,7 @@ func (s *WorkOrderService) GetSummary(ctx context.Context, ownerID uuid.UUID) (*
 	return summary, nil
 }
 
-func (s *WorkOrderService) BulkUpdateStatus(ctx context.Context, ownerID uuid.UUID, ids []uuid.UUID, status domain.WorkOrderStatus) (int, error) {
+func (s *WorkOrderService) BulkUpdateStatus(ctx context.Context, ownerID uuid.UUID, ids []uuid.UUID, status domain.WorkOrderStatus, access domain.PropertyAccess) (int, error) {
 	if len(ids) == 0 {
 		return 0, fmt.Errorf("bulk update work order status: %w", domain.ValidationErrors{
 			{Field: "ids", Message: "must include at least one work order id"},
@@ -373,22 +374,22 @@ func (s *WorkOrderService) BulkUpdateStatus(ctx context.Context, ownerID uuid.UU
 	// UpdateWorkOrder for the detailed timeline a single-work-order edit
 	// gets; this is a convenience shortcut for acting on many rows at
 	// once, not a substitute for it.
-	n, err := s.repo.BulkUpdateStatus(ctx, ownerID, ids, status)
+	n, err := s.repo.BulkUpdateStatus(ctx, ownerID, ids, status, access)
 	if err != nil {
 		return 0, fmt.Errorf("bulk update work order status: %w", err)
 	}
 
 	// Bulk updates skip the per-row path above, so run the expense sync
 	// explicitly. The repository already restricted the write to rows the
-	// owner owns; the ownership re-check here keeps a foreign id from
-	// ever reaching the ledger.
+	// owner owns and within access's scope; the re-check here keeps a
+	// foreign or out-of-scope id from ever reaching the ledger.
 	if s.expenses != nil {
 		for _, id := range ids {
 			w, err := s.repo.GetByID(ctx, id)
 			if err != nil {
 				continue
 			}
-			if _, err := s.requireOwnedProperty(ctx, w.PropertyID, ownerID); err != nil {
+			if _, err := s.requireOwnedProperty(ctx, w.PropertyID, ownerID, access); err != nil {
 				continue
 			}
 			s.syncExpense(ctx, ownerID, w)
@@ -397,26 +398,26 @@ func (s *WorkOrderService) BulkUpdateStatus(ctx context.Context, ownerID uuid.UU
 	return n, nil
 }
 
-func (s *WorkOrderService) BulkReassign(ctx context.Context, ownerID uuid.UUID, ids []uuid.UUID, assignedTo string) (int, error) {
+func (s *WorkOrderService) BulkReassign(ctx context.Context, ownerID uuid.UUID, ids []uuid.UUID, assignedTo string, access domain.PropertyAccess) (int, error) {
 	if len(ids) == 0 {
 		return 0, fmt.Errorf("bulk reassign work orders: %w", domain.ValidationErrors{
 			{Field: "ids", Message: "must include at least one work order id"},
 		})
 	}
 
-	n, err := s.repo.BulkReassign(ctx, ownerID, ids, assignedTo)
+	n, err := s.repo.BulkReassign(ctx, ownerID, ids, assignedTo, access)
 	if err != nil {
 		return 0, fmt.Errorf("bulk reassign work orders: %w", err)
 	}
 	return n, nil
 }
 
-func (s *WorkOrderService) ListActivity(ctx context.Context, workOrderID, ownerID uuid.UUID) ([]*domain.MaintenanceActivity, error) {
+func (s *WorkOrderService) ListActivity(ctx context.Context, workOrderID, ownerID uuid.UUID, access domain.PropertyAccess) ([]*domain.MaintenanceActivity, error) {
 	w, err := s.repo.GetByID(ctx, workOrderID)
 	if err != nil {
 		return nil, fmt.Errorf("list activity for work order %s: %w", workOrderID, err)
 	}
-	if _, err := s.requireOwnedProperty(ctx, w.PropertyID, ownerID); err != nil {
+	if _, err := s.requireOwnedProperty(ctx, w.PropertyID, ownerID, access); err != nil {
 		return nil, fmt.Errorf("list activity for work order %s: %w", workOrderID, err)
 	}
 
@@ -442,12 +443,12 @@ func (s *WorkOrderService) ListRecentActivity(ctx context.Context, ownerID uuid.
 	return activity, nil
 }
 
-func (s *WorkOrderService) AddNote(ctx context.Context, workOrderID, ownerID uuid.UUID, message string, visibility domain.MaintenanceVisibility) (*domain.MaintenanceActivity, error) {
+func (s *WorkOrderService) AddNote(ctx context.Context, workOrderID, ownerID uuid.UUID, message string, visibility domain.MaintenanceVisibility, access domain.PropertyAccess) (*domain.MaintenanceActivity, error) {
 	w, err := s.repo.GetByID(ctx, workOrderID)
 	if err != nil {
 		return nil, fmt.Errorf("add note to work order %s: %w", workOrderID, err)
 	}
-	if _, err := s.requireOwnedProperty(ctx, w.PropertyID, ownerID); err != nil {
+	if _, err := s.requireOwnedProperty(ctx, w.PropertyID, ownerID, access); err != nil {
 		return nil, fmt.Errorf("add note to work order %s: %w", workOrderID, err)
 	}
 
@@ -479,12 +480,15 @@ func (s *WorkOrderService) AddNote(ctx context.Context, workOrderID, ownerID uui
 // requireOwnedProperty loads propertyID and returns domain.ErrNotFound
 // (not ErrForbidden) if it belongs to someone else — the same
 // IDOR-safe contract as PropertyService/UnitService/LeaseService.
-func (s *WorkOrderService) requireOwnedProperty(ctx context.Context, propertyID, ownerID uuid.UUID) (*domain.Property, error) {
+func (s *WorkOrderService) requireOwnedProperty(ctx context.Context, propertyID, ownerID uuid.UUID, access domain.PropertyAccess) (*domain.Property, error) {
 	p, err := s.propertyRepo.GetByID(ctx, propertyID)
 	if err != nil {
 		return nil, err
 	}
 	if p.OwnerID != ownerID {
+		return nil, domain.ErrNotFound
+	}
+	if !access.All && !slices.Contains(access.PropertyIDs, p.ID) {
 		return nil, domain.ErrNotFound
 	}
 	return p, nil

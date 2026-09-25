@@ -114,6 +114,17 @@ func (r *StaffRepository) GetByInviteTokenHash(ctx context.Context, hash string)
 	return u, nil
 }
 
+func (r *StaffRepository) GetByPasswordResetTokenHash(ctx context.Context, hash string) (*domain.User, error) {
+	u, err := scanUser(r.pool.QueryRow(ctx, `SELECT `+userColumns+` FROM users WHERE password_reset_token_hash = $1`, hash))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("get user by password reset token: %w", domain.ErrNotFound)
+		}
+		return nil, fmt.Errorf("get user by password reset token: %w", err)
+	}
+	return u, nil
+}
+
 const staffListSelect = `
 	SELECT u.id, u.email, u.name, u.password_hash, u.role, u.account_owner_id, u.staff_role, u.status, u.all_properties,
 	       u.invited_by, u.invited_at, u.invite_expires_at, u.invite_token_hash, u.last_login_at, u.created_at, u.updated_at,
@@ -191,6 +202,48 @@ func (r *StaffRepository) attachPropertyAccess(ctx context.Context, members []*d
 		}
 	}
 	return rows.Err()
+}
+
+// GetPropertyAccess reads one user's current property scope — the
+// single-user counterpart to attachPropertyAccess, used per-request by
+// the ResolvePropertyAccess middleware rather than the Users & Roles
+// list screen. A root account row (account_owner_id NULL) or an
+// Admin-role staff row always resolves to all-access, same as
+// scanStaffMember/the invite-and-update-time forcing in StaffService —
+// this is a read of that same stored state, not a separate rule.
+func (r *StaffRepository) GetPropertyAccess(ctx context.Context, userID uuid.UUID) (domain.PropertyAccess, error) {
+	var accountOwnerID uuid.NullUUID
+	var staffRole sql.NullString
+	var allProperties bool
+	if err := r.pool.QueryRow(ctx, `SELECT account_owner_id, staff_role, all_properties FROM users WHERE id = $1`, userID).
+		Scan(&accountOwnerID, &staffRole, &allProperties); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return domain.PropertyAccess{}, domain.ErrNotFound
+		}
+		return domain.PropertyAccess{}, fmt.Errorf("get user %s property access: %w", userID, err)
+	}
+	if !accountOwnerID.Valid || (staffRole.Valid && domain.StaffRole(staffRole.String) == domain.StaffRoleAdmin) || allProperties {
+		return domain.AllPropertyAccess(), nil
+	}
+
+	rows, err := r.pool.Query(ctx, `SELECT property_id FROM staff_property_access WHERE user_id = $1`, userID)
+	if err != nil {
+		return domain.PropertyAccess{}, fmt.Errorf("list property access for user %s: %w", userID, err)
+	}
+	defer rows.Close()
+
+	var ids []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return domain.PropertyAccess{}, fmt.Errorf("scan property access row: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return domain.PropertyAccess{}, err
+	}
+	return domain.PropertyAccess{PropertyIDs: ids}, nil
 }
 
 func (r *StaffRepository) ListForAccount(ctx context.Context, accountOwnerID uuid.UUID) ([]*domain.StaffMember, error) {
@@ -309,6 +362,64 @@ func (r *StaffRepository) ResendInvite(ctx context.Context, userID uuid.UUID, to
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("commit resend invite for %s: %w", userID, err)
+	}
+	return nil
+}
+
+// SetPasswordResetToken is admin-triggered (see the account_owner_id
+// guard below, matching ResendInvite/SetStatus) — it never touches
+// status or role, only stashes a token an already-active user can
+// exchange for a new password.
+func (r *StaffRepository) SetPasswordResetToken(ctx context.Context, userID uuid.UUID, tokenHash string, expiresAt time.Time, audit domain.StaffAuditEntry) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin set password reset token for %s: %w", userID, err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	tag, err := tx.Exec(ctx, `
+		UPDATE users SET password_reset_token_hash = $2, password_reset_expires_at = $3
+		WHERE id = $1 AND account_owner_id IS NOT NULL`, userID, tokenHash, expiresAt)
+	if err != nil {
+		return fmt.Errorf("set password reset token for %s: %w", userID, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("set password reset token for %s: %w", userID, domain.ErrNotFound)
+	}
+	if err := insertAccountAudit(ctx, tx, audit); err != nil {
+		return err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit set password reset token for %s: %w", userID, err)
+	}
+	return nil
+}
+
+// ConfirmPasswordReset has no status/account_owner_id guard, unlike
+// SetPasswordResetToken above — the token itself (verified by the
+// service before this is called) is the only authorization needed,
+// same as AcceptInvite below.
+func (r *StaffRepository) ConfirmPasswordReset(ctx context.Context, userID uuid.UUID, passwordHash string, resetAt time.Time, audit domain.StaffAuditEntry) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin confirm password reset for %s: %w", userID, err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	tag, err := tx.Exec(ctx, `
+		UPDATE users SET password_hash = $2, password_reset_token_hash = NULL, password_reset_expires_at = NULL, updated_at = $3
+		WHERE id = $1`, userID, passwordHash, resetAt)
+	if err != nil {
+		return fmt.Errorf("confirm password reset for %s: %w", userID, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("confirm password reset for %s: %w", userID, domain.ErrNotFound)
+	}
+	if err := insertAccountAudit(ctx, tx, audit); err != nil {
+		return err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit confirm password reset for %s: %w", userID, err)
 	}
 	return nil
 }

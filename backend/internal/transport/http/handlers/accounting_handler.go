@@ -164,6 +164,9 @@ func parseRentRollOptions(r *http.Request) (domain.RentRollOptions, error) {
 	if opts.PropertyID, err = optionalUUIDQuery(r, "property_id"); err != nil {
 		return opts, err
 	}
+	if opts.LeaseID, err = optionalUUIDQuery(r, "lease_id"); err != nil {
+		return opts, err
+	}
 	if s := q.Get("status"); s != "" {
 		status := domain.PaymentStatus(s)
 		if !status.Valid() {

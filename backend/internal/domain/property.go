@@ -201,12 +201,13 @@ type PropertyListFilter struct {
 }
 
 type PropertyListOptions struct {
-	OwnerID  uuid.UUID
-	Filter   PropertyListFilter
-	Sort     PropertySortKey
-	SortDesc bool
-	Limit    int
-	Offset   int
+	OwnerID        uuid.UUID
+	PropertyAccess PropertyAccess
+	Filter         PropertyListFilter
+	Sort           PropertySortKey
+	SortDesc       bool
+	Limit          int
+	Offset         int
 }
 
 // PropertyRepository is the port implemented by internal/repository/postgres.
@@ -217,9 +218,10 @@ type PropertyRepository interface {
 	Update(ctx context.Context, p *Property) error
 	Delete(ctx context.Context, id uuid.UUID) error
 	// BulkUpdateStatus applies status to every property in ids owned by
-	// ownerID, ignoring ids that don't exist or belong to someone else,
-	// and returns how many rows were actually changed.
-	BulkUpdateStatus(ctx context.Context, ownerID uuid.UUID, ids []uuid.UUID, status PropertyStatus) (int, error)
+	// ownerID and within access's scope, ignoring ids that don't exist,
+	// belong to someone else, or fall outside access, and returns how
+	// many rows were actually changed.
+	BulkUpdateStatus(ctx context.Context, ownerID uuid.UUID, ids []uuid.UUID, status PropertyStatus, access PropertyAccess) (int, error)
 	// ExistsByOwnerAddress reports whether owner already has a property
 	// at addressLine1. It backs a business rule (see PropertyService)
 	// that can't be expressed as a struct validation tag: whether the
@@ -233,13 +235,14 @@ type PropertyRepository interface {
 type PropertyService interface {
 	CreateProperty(ctx context.Context, input CreatePropertyInput) (*Property, error)
 	// GetProperty, UpdateProperty, and DeleteProperty all take ownerID
-	// and return ErrNotFound (not ErrForbidden) when the property exists
-	// but belongs to someone else — an authenticated user should not be
-	// able to distinguish "not yours" from "doesn't exist" by probing
-	// IDs.
-	GetProperty(ctx context.Context, id, ownerID uuid.UUID) (*Property, error)
+	// and access and return ErrNotFound (not ErrForbidden) when the
+	// property exists but belongs to someone else or falls outside
+	// access's scope — an authenticated user should not be able to
+	// distinguish "not yours"/"not in your scope" from "doesn't exist"
+	// by probing IDs.
+	GetProperty(ctx context.Context, id, ownerID uuid.UUID, access PropertyAccess) (*Property, error)
 	ListProperties(ctx context.Context, opts PropertyListOptions) ([]*Property, int, error)
-	UpdateProperty(ctx context.Context, id, ownerID uuid.UUID, input UpdatePropertyInput) (*Property, error)
-	DeleteProperty(ctx context.Context, id, ownerID uuid.UUID) error
-	BulkUpdateStatus(ctx context.Context, ownerID uuid.UUID, ids []uuid.UUID, status PropertyStatus) (int, error)
+	UpdateProperty(ctx context.Context, id, ownerID uuid.UUID, input UpdatePropertyInput, access PropertyAccess) (*Property, error)
+	DeleteProperty(ctx context.Context, id, ownerID uuid.UUID, access PropertyAccess) error
+	BulkUpdateStatus(ctx context.Context, ownerID uuid.UUID, ids []uuid.UUID, status PropertyStatus, access PropertyAccess) (int, error)
 }

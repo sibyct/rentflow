@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
@@ -16,7 +16,6 @@ import type { UnitPortfolioSortKey } from '../api/unitsApi';
 import { useDeleteUnit, useUnitsPortfolio } from '../hooks/useUnitsQueries';
 import type { UnitRowWithProperty, UnitStatus, UnitType } from '../types';
 import { GlobalUnitsTable, type UnitsPortfolioEmptyState } from './GlobalUnitsTable';
-import { UnitDetailDrawer } from './UnitDetailDrawer';
 import { UnitFormDialog } from './UnitFormDialog';
 import { UnitsToolbar } from './UnitsToolbar';
 
@@ -30,6 +29,7 @@ import { UnitsToolbar } from './UnitsToolbar';
  * infer it from.
  */
 export function UnitsScreen() {
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [search, setSearch] = useState('');
@@ -45,7 +45,6 @@ export function UnitsScreen() {
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(25);
   const [addOpen, setAddOpen] = useState(false);
-  const [viewUnit, setViewUnit] = useState<UnitRowWithProperty | null>(null);
   const [editUnit, setEditUnit] = useState<UnitRowWithProperty | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<UnitRowWithProperty | null>(null);
   const [toast, setToast] = useState<{ message: string; severity: 'success' | 'error' } | null>(null);
@@ -161,7 +160,7 @@ export function UnitsScreen() {
             }}
             onAddUnit={() => setAddOpen(true)}
             onResetView={resetView}
-            onViewUnit={setViewUnit}
+            onViewUnit={(u) => navigate(`/units/${u.id}`)}
             onEditUnit={setEditUnit}
             onDeleteUnit={setDeleteTarget}
           />
@@ -175,21 +174,6 @@ export function UnitsScreen() {
         onSaved={() => {
           setAddOpen(false);
           setToast({ message: 'Unit added', severity: 'success' });
-        }}
-      />
-
-      <UnitDetailDrawer
-        unitId={viewUnit?.id ?? null}
-        propertyId={viewUnit?.propertyId ?? ''}
-        propertyName={viewUnit?.propertyName ?? ''}
-        onClose={() => setViewUnit(null)}
-        onEdit={() => {
-          if (viewUnit) setEditUnit(viewUnit);
-          setViewUnit(null);
-        }}
-        onDeleted={() => {
-          setViewUnit(null);
-          setToast({ message: 'Unit removed', severity: 'success' });
         }}
       />
 

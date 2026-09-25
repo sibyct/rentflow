@@ -604,10 +604,18 @@ func rentRollStatusWhere(s domain.PaymentStatus) string {
 
 func (r *LedgerRepository) ListRentRoll(ctx context.Context, opts domain.RentRollOptions) ([]*domain.RentRollRow, int, error) {
 	args := []any{opts.OwnerID, opts.PeriodFrom, opts.PeriodTo}
-	propertyFilter := ""
+	var rrConditions []string
 	if opts.PropertyID != nil {
 		args = append(args, *opts.PropertyID)
-		propertyFilter = fmt.Sprintf("WHERE pr.id = $%d", len(args))
+		rrConditions = append(rrConditions, fmt.Sprintf("pr.id = $%d", len(args)))
+	}
+	if opts.LeaseID != nil {
+		args = append(args, *opts.LeaseID)
+		rrConditions = append(rrConditions, fmt.Sprintf("l.id = $%d", len(args)))
+	}
+	propertyFilter := ""
+	if len(rrConditions) > 0 {
+		propertyFilter = "WHERE " + strings.Join(rrConditions, " AND ")
 	}
 	statusFilter := ""
 	if opts.Status != nil {

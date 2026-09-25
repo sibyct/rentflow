@@ -71,3 +71,28 @@ export interface UnitDetail extends UnitRow {
 export interface UnitRowWithProperty extends UnitRow {
   propertyName: string;
 }
+
+export type UnitDocumentCategory = 'inspection' | 'manual' | 'photo' | 'other';
+
+export const UNIT_DOCUMENT_CATEGORIES: UnitDocumentCategory[] = ['inspection', 'manual', 'photo', 'other'];
+
+export const UNIT_DOCUMENT_CATEGORY_LABELS: Record<UnitDocumentCategory, string> = {
+  inspection: 'Inspection',
+  manual: 'Manual',
+  photo: 'Photo',
+  other: 'Other',
+};
+
+/** A unit-level file (inspection report, manual, photo) — distinct from any lease-linked attachment, of which none exist today. See the Unit Detail page's Documents tab. */
+export interface UnitDocument {
+  id: string;
+  unitId: string;
+  attachmentId: string;
+  category: UnitDocumentCategory;
+  uploadedBy: string;
+  uploadedByName: string;
+  filename: string;
+  contentType: string;
+  sizeBytes: number;
+  createdAt: string;
+}

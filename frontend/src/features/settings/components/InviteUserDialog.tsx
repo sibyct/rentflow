@@ -5,6 +5,7 @@ import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Checkbox from '@mui/material/Checkbox';
+import CircularProgress from '@mui/material/CircularProgress';
 import Dialog from '@mui/material/Dialog';
 import DialogActions from '@mui/material/DialogActions';
 import DialogContent from '@mui/material/DialogContent';
@@ -18,16 +19,28 @@ import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import CloseOutlined from '@mui/icons-material/CloseOutlined';
+import { ApiError } from '@/api/client';
 import { tokens } from '@/app/tokens';
+import { useProperties } from '@/features/properties/hooks/usePropertiesQueries';
 import { StatusChip } from '@/shared/components';
-import { useUsersRolesStore } from '../store/useUsersRolesStore';
+import { useInviteStaff, useResendStaffInvite, useReactivateStaff } from '../hooks/useStaffQueries';
 import { inviteDefaultValues, inviteSchema, type InviteFormValues } from '../schemas/inviteSchema';
 import { initials } from '../utils';
-import { MOCK_PROPERTIES, ROLE_LABELS, STAFF_ROLES, USER_STATUS_LABELS, USER_STATUS_TONE, type StaffUser } from '../types';
+import { ROLE_LABELS, STAFF_ROLES, USER_STATUS_LABELS, USER_STATUS_TONE, type StaffUser } from '../types';
+
+interface Toast {
+  message: string;
+  severity: 'success' | 'error';
+}
 
 interface InviteUserDialogProps {
   open: boolean;
   onClose: () => void;
+  onToast: (toast: Toast) => void;
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof ApiError ? err.message : 'Something went wrong. Please try again.';
 }
 
 /**
@@ -36,12 +49,17 @@ interface InviteUserDialogProps {
  * conflict panel naming the existing user and offering the one action
  * that actually applies to their current status.
  */
-export function InviteUserDialog({ open, onClose }: InviteUserDialogProps) {
-  const invite = useUsersRolesStore((s) => s.invite);
-  const resendInvite = useUsersRolesStore((s) => s.resendInvite);
-  const reactivate = useUsersRolesStore((s) => s.reactivate);
+export function InviteUserDialog({ open, onClose, onToast }: InviteUserDialogProps) {
+  const invite = useInviteStaff();
+  const resendInvite = useResendStaffInvite();
+  const reactivate = useReactivateStaff();
+  // A generous limit, same as the backend's own ownedPropertyNames lookup
+  // (StaffService) — this picker needs every property, not a page of them.
+  const { data: propertiesResult } = useProperties({ limit: 500, offset: 0 });
+  const properties = propertiesResult?.properties ?? [];
 
   const [conflict, setConflict] = useState<StaffUser | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const {
     control,
@@ -53,32 +71,42 @@ export function InviteUserDialog({ open, onClose }: InviteUserDialogProps) {
 
   const role = useWatch({ control, name: 'role' });
   const accessAll = useWatch({ control, name: 'accessAll' });
-  const properties = useWatch({ control, name: 'properties' });
+  const selectedPropertyIds = useWatch({ control, name: 'properties' });
 
   useEffect(() => {
     if (open) {
       reset(inviteDefaultValues());
       setConflict(null);
+      setSubmitError(null);
     }
   }, [open, reset]);
 
-  function toggleProperty(name: string) {
-    const next = properties.includes(name) ? properties.filter((p) => p !== name) : [...properties, name];
+  function toggleProperty(id: string) {
+    const next = selectedPropertyIds.includes(id) ? selectedPropertyIds.filter((p) => p !== id) : [...selectedPropertyIds, id];
     setValue('properties', next, { shouldValidate: true });
   }
 
   function onSubmit(values: InviteFormValues) {
-    const result = invite({
-      name: values.name,
-      email: values.email,
-      role: values.role,
-      propertyAccess: { all: values.accessAll, properties: values.properties },
-    });
-    if (result.kind === 'conflict') {
-      setConflict(result.existing);
-      return;
-    }
-    onClose();
+    setSubmitError(null);
+    invite.mutate(
+      {
+        name: values.name,
+        email: values.email,
+        role: values.role,
+        propertyAccess: { all: values.accessAll, propertyIds: values.properties },
+      },
+      {
+        onSuccess: (result) => {
+          if (result.kind === 'conflict') {
+            setConflict(result.existing);
+            return;
+          }
+          onToast({ message: `Invitation sent to ${result.user.email}`, severity: 'success' });
+          onClose();
+        },
+        onError: (err) => setSubmitError(errorMessage(err)),
+      },
+    );
   }
 
   return (
@@ -119,10 +147,16 @@ export function InviteUserDialog({ open, onClose }: InviteUserDialogProps) {
             {(conflict.status === 'invited' || conflict.status === 'invite_expired') && (
               <Button
                 variant="contained"
-                onClick={() => {
-                  resendInvite(conflict.id);
-                  onClose();
-                }}
+                disabled={resendInvite.isPending}
+                onClick={() =>
+                  resendInvite.mutate(conflict.id, {
+                    onSuccess: () => {
+                      onToast({ message: `Invitation resent to ${conflict.email}`, severity: 'success' });
+                      onClose();
+                    },
+                    onError: (err) => onToast({ message: errorMessage(err), severity: 'error' }),
+                  })
+                }
               >
                 Resend invite
               </Button>
@@ -130,10 +164,16 @@ export function InviteUserDialog({ open, onClose }: InviteUserDialogProps) {
             {conflict.status === 'deactivated' && (
               <Button
                 variant="contained"
-                onClick={() => {
-                  reactivate(conflict.id);
-                  onClose();
-                }}
+                disabled={reactivate.isPending}
+                onClick={() =>
+                  reactivate.mutate(conflict.id, {
+                    onSuccess: () => {
+                      onToast({ message: `${conflict.name} was reactivated`, severity: 'success' });
+                      onClose();
+                    },
+                    onError: (err) => onToast({ message: errorMessage(err), severity: 'error' }),
+                  })
+                }
               >
                 Reactivate
               </Button>
@@ -144,6 +184,11 @@ export function InviteUserDialog({ open, onClose }: InviteUserDialogProps) {
         <form onSubmit={handleSubmit(onSubmit)} noValidate>
           <DialogContent>
             <Stack spacing={2.5}>
+              {submitError && (
+                <Alert severity="error" onClose={() => setSubmitError(null)}>
+                  {submitError}
+                </Alert>
+              )}
               <Controller
                 name="name"
                 control={control}
@@ -188,11 +233,11 @@ export function InviteUserDialog({ open, onClose }: InviteUserDialogProps) {
                   </RadioGroup>
                   {!accessAll && (
                     <Box sx={{ mt: 1, ml: 4, display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)' }}>
-                      {MOCK_PROPERTIES.map((p) => (
+                      {properties.map((p) => (
                         <FormControlLabel
-                          key={p}
-                          control={<Checkbox size="small" checked={properties.includes(p)} onChange={() => toggleProperty(p)} />}
-                          label={<Typography sx={{ fontSize: 13 }}>{p}</Typography>}
+                          key={p.id}
+                          control={<Checkbox size="small" checked={selectedPropertyIds.includes(p.id)} onChange={() => toggleProperty(p.id)} />}
+                          label={<Typography sx={{ fontSize: 13 }}>{p.name}</Typography>}
                         />
                       ))}
                     </Box>
@@ -208,8 +253,8 @@ export function InviteUserDialog({ open, onClose }: InviteUserDialogProps) {
             <Button variant="text" onClick={onClose} sx={{ color: tokens.slate[600] }}>
               Cancel
             </Button>
-            <Button type="submit" variant="contained">
-              Send invite
+            <Button type="submit" variant="contained" disabled={invite.isPending} startIcon={invite.isPending ? <CircularProgress size={15} color="inherit" /> : undefined}>
+              {invite.isPending ? 'Sending…' : 'Send invite'}
             </Button>
           </DialogActions>
         </form>

@@ -200,7 +200,7 @@ func TestPropertyRepository_CRUD(t *testing.T) {
 			t.Fatalf("Create() unexpected error = %v", err)
 		}
 
-		got, total, err := repo.List(ctx, domain.PropertyListOptions{OwnerID: ownerID, Limit: 2, Offset: 0})
+		got, total, err := repo.List(ctx, domain.PropertyListOptions{OwnerID: ownerID, PropertyAccess: domain.AllPropertyAccess(), Limit: 2, Offset: 0})
 		if err != nil {
 			t.Fatalf("List() unexpected error = %v", err)
 		}
@@ -213,7 +213,7 @@ func TestPropertyRepository_CRUD(t *testing.T) {
 
 		activeStatus := domain.PropertyStatusActive
 		_, activeTotal, err := repo.List(ctx, domain.PropertyListOptions{
-			OwnerID: ownerID, Limit: 10, Filter: domain.PropertyListFilter{Status: &activeStatus},
+			OwnerID: ownerID, PropertyAccess: domain.AllPropertyAccess(), Limit: 10, Filter: domain.PropertyListFilter{Status: &activeStatus},
 		})
 		if err != nil {
 			t.Fatalf("List() with status filter unexpected error = %v", err)
@@ -231,7 +231,7 @@ func TestPropertyRepository_CRUD(t *testing.T) {
 		}
 
 		got, total, err := repo.List(ctx, domain.PropertyListOptions{
-			OwnerID: ownerID, Limit: 10, Filter: domain.PropertyListFilter{Search: "Findable"},
+			OwnerID: ownerID, PropertyAccess: domain.AllPropertyAccess(), Limit: 10, Filter: domain.PropertyListFilter{Search: "Findable"},
 		})
 		if err != nil {
 			t.Fatalf("List() with search unexpected error = %v", err)
@@ -270,7 +270,7 @@ func TestPropertyRepository_CRUD(t *testing.T) {
 			t.Fatalf("Create() unexpected error = %v", err)
 		}
 
-		n, err := repo.BulkUpdateStatus(ctx, ownerID, []uuid.UUID{p.ID, other.ID}, domain.PropertyStatusArchived)
+		n, err := repo.BulkUpdateStatus(ctx, ownerID, []uuid.UUID{p.ID, other.ID}, domain.PropertyStatusArchived, domain.AllPropertyAccess())
 		if err != nil {
 			t.Fatalf("BulkUpdateStatus() unexpected error = %v", err)
 		}

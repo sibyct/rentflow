@@ -22,6 +22,8 @@ import ExpandMoreOutlined from '@mui/icons-material/ExpandMoreOutlined';
 import { ApiError } from '@/api/client';
 import { tokens } from '@/app/tokens';
 import { LeaseFormDialog } from '@/features/leases/components/LeaseFormDialog';
+import { useLeasesPortfolio } from '@/features/leases/hooks/useLeasesQueries';
+import { LEASE_DISPLAY_STATUS_LABELS } from '@/features/leases/types';
 import type { PropertyRow } from '@/features/properties/mock/propertyRows';
 import { toFormValues } from '../api/unitsApi';
 import { useCreateUnit, useUnit, useUpdateUnit } from '../hooks/useUnitsQueries';
@@ -73,6 +75,16 @@ export function UnitFormDialog({ open, onClose, propertyId, properties, unitId, 
   const [notesOpen, setNotesOpen] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [leaseFormOpen, setLeaseFormOpen] = useState(false);
+
+  // Whichever lease is currently active for this unit, if any — mirrors
+  // UnitDetailScreen's own lookup. Without this, an occupied unit that
+  // already has a lease looked like it had none: this form only ever
+  // offered "Create Lease", with no sign the active one existed.
+  const { data: leaseData } = useLeasesPortfolio(
+    { unitId, status: 'active', limit: 1, offset: 0 },
+    { enabled: isEditMode && Boolean(unitId) },
+  );
+  const activeLease = leaseData?.leases[0];
 
   const {
     control,
@@ -253,7 +265,22 @@ export function UnitFormDialog({ open, onClose, propertyId, properties, unitId, 
                         <TextField {...field} label="Tenant" fullWidth placeholder="Who's occupying this unit?" size="small" />
                       )}
                     />
-                    {isEditMode ? (
+                    {isEditMode && activeLease ? (
+                      <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between', gap: 1.5 }}>
+                        <Box sx={{ minWidth: 0 }}>
+                          <Typography sx={{ fontSize: 12.5, fontWeight: 600, color: tokens.slate[700] }}>{activeLease.primaryResidentName}</Typography>
+                          <Typography sx={{ fontSize: 11.5, color: tokens.slate[500] }}>{LEASE_DISPLAY_STATUS_LABELS[activeLease.displayStatus]} lease</Typography>
+                        </Box>
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          onClick={() => setLeaseFormOpen(true)}
+                          sx={{ borderColor: tokens.slate[300], color: tokens.slate[700], flexShrink: 0 }}
+                        >
+                          Manage Lease
+                        </Button>
+                      </Stack>
+                    ) : isEditMode ? (
                       <Button
                         size="small"
                         variant="outlined"
@@ -355,6 +382,7 @@ export function UnitFormDialog({ open, onClose, propertyId, properties, unitId, 
           open={leaseFormOpen}
           onClose={() => setLeaseFormOpen(false)}
           unitId={unitId}
+          leaseId={activeLease?.id}
           onSaved={() => setLeaseFormOpen(false)}
         />
       )}

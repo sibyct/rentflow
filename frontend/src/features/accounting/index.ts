@@ -3,3 +3,4 @@ export { AccountingDashboardScreen } from './components/AccountingDashboardScree
 export { RentRollScreen } from './components/RentRollScreen';
 export { ExpensesScreen } from './components/ExpensesScreen';
 export { ChargesScreen } from './components/ChargesScreen';
+export { PropertyFinancialsSection } from './components/PropertyFinancialsSection';

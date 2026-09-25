@@ -67,6 +67,11 @@ type AcceptInviteRequest struct {
 	Password string `json:"password" validate:"required,min=8,max=72"`
 }
 
+type ConfirmPasswordResetRequest struct {
+	Token    string `json:"token" validate:"required"`
+	Password string `json:"password" validate:"required,min=8,max=72"`
+}
+
 // PropertyAccessResponse mirrors PropertyAccessRequest for output, with
 // display names alongside the ids so the client never has to cross-
 // reference a separate properties call just to render "3 properties".
@@ -149,6 +154,15 @@ func NewInviteLookupResponse(l *domain.InviteLookup) InviteLookupResponse {
 		PropertyAccess: newPropertyAccessResponse(l.PropertyAccess, l.PropertyNames),
 		InvitedByName:  l.InvitedByName, Expired: l.Expired,
 	}
+}
+
+type PasswordResetLookupResponse struct {
+	Email   string `json:"email"`
+	Expired bool   `json:"expired"`
+}
+
+func NewPasswordResetLookupResponse(l *domain.PasswordResetLookup) PasswordResetLookupResponse {
+	return PasswordResetLookupResponse{Email: l.Email, Expired: l.Expired}
 }
 
 type StaffAuditEntryResponse struct {
