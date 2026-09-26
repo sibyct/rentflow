@@ -17,8 +17,8 @@ export function useUnitDocuments(unitId: string) {
 export function useAddUnitDocument(unitId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ attachmentId, category }: { attachmentId: string; category: UnitDocumentCategory }) =>
-      unitDocumentsApi.add(unitId, attachmentId, category),
+    mutationFn: ({ attachmentId, category, relatedLeaseId }: { attachmentId: string; category: UnitDocumentCategory; relatedLeaseId?: string }) =>
+      unitDocumentsApi.add(unitId, attachmentId, category, relatedLeaseId),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: unitDocumentsQueryKeys.byUnit(unitId) }),
   });
 }

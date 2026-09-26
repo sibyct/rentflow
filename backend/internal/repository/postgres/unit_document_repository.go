@@ -24,17 +24,17 @@ var _ domain.UnitDocumentRepository = (*UnitDocumentRepository)(nil)
 
 func (r *UnitDocumentRepository) Create(ctx context.Context, d *domain.UnitDocument) error {
 	const q = `
-		INSERT INTO unit_documents (id, unit_id, attachment_id, category, uploaded_by, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6)`
+		INSERT INTO unit_documents (id, unit_id, attachment_id, category, uploaded_by, related_lease_id, is_automated, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`
 
-	if _, err := r.pool.Exec(ctx, q, d.ID, d.UnitID, d.AttachmentID, d.Category, d.UploadedBy, d.CreatedAt); err != nil {
+	if _, err := r.pool.Exec(ctx, q, d.ID, d.UnitID, d.AttachmentID, d.Category, d.UploadedBy, d.RelatedLeaseID, d.IsAutomated, d.CreatedAt); err != nil {
 		return fmt.Errorf("create unit document %s: %w", d.ID, err)
 	}
 	return nil
 }
 
 const unitDocumentSelect = `
-	SELECT ud.id, ud.unit_id, ud.attachment_id, ud.category, ud.uploaded_by, ud.created_at,
+	SELECT ud.id, ud.unit_id, ud.attachment_id, ud.category, ud.uploaded_by, ud.related_lease_id, ud.is_automated, ud.created_at,
 	       COALESCE(NULLIF(u.name, ''), u.email, '') AS uploaded_by_name,
 	       a.filename, a.content_type, a.size_bytes
 	FROM unit_documents ud
@@ -43,11 +43,15 @@ const unitDocumentSelect = `
 
 func scanUnitDocument(row rowScanner) (*domain.UnitDocument, error) {
 	var d domain.UnitDocument
+	var relatedLeaseID uuid.NullUUID
 	if err := row.Scan(
-		&d.ID, &d.UnitID, &d.AttachmentID, &d.Category, &d.UploadedBy, &d.CreatedAt,
+		&d.ID, &d.UnitID, &d.AttachmentID, &d.Category, &d.UploadedBy, &relatedLeaseID, &d.IsAutomated, &d.CreatedAt,
 		&d.UploadedByName, &d.Filename, &d.ContentType, &d.SizeBytes,
 	); err != nil {
 		return nil, err
+	}
+	if relatedLeaseID.Valid {
+		d.RelatedLeaseID = &relatedLeaseID.UUID
 	}
 	return &d, nil
 }

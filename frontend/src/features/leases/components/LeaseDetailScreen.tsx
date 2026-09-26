@@ -12,15 +12,19 @@ import Link from '@mui/material/Link';
 import Paper from '@mui/material/Paper';
 import Snackbar from '@mui/material/Snackbar';
 import Stack from '@mui/material/Stack';
+import Tab from '@mui/material/Tab';
+import Tabs from '@mui/material/Tabs';
 import Typography from '@mui/material/Typography';
 import DeleteOutlineOutlined from '@mui/icons-material/DeleteOutlineOutlined';
 import EditOutlined from '@mui/icons-material/EditOutlined';
 import { ApiError } from '@/api/client';
 import { tokens } from '@/app/tokens';
 import { ERROR_STATE_PRESETS, ErrorState, LoadingSpinner } from '@/shared/components';
-import { useDeleteLease, useLease } from '../hooks/useLeasesQueries';
+import { useDeleteLease, useLease, useLeaseAudit } from '../hooks/useLeasesQueries';
 import { LEASE_DISPLAY_STATUS_LABELS, LEASE_TYPE_LABELS, RENEWAL_STATUS_LABELS, TERMINATION_REASON_LABELS, type LeaseDisplayStatus } from '../types';
+import { LeaseDocumentsSection } from './LeaseDocumentsSection';
 import { LeaseFormDialog } from './LeaseFormDialog';
+import { LeaseRentHistorySection } from './LeaseRentHistorySection';
 
 const STATUS_COLOR: Record<LeaseDisplayStatus, 'success' | 'default' | 'warning' | 'error' | 'info'> = {
   draft: 'default',
@@ -40,6 +44,8 @@ function formatDate(iso: string): string {
   return Number.isNaN(d.getTime()) ? iso : dateFormatter.format(d);
 }
 
+type TabKey = 'overview' | 'rentHistory' | 'documents' | 'changeLog';
+
 interface LeaseDetailScreenProps {
   leaseId: string;
 }
@@ -48,7 +54,9 @@ export function LeaseDetailScreen({ leaseId }: LeaseDetailScreenProps) {
   const navigate = useNavigate();
   const { data: lease, isLoading, isError, error, refetch } = useLease(leaseId);
   const deleteLease = useDeleteLease(lease?.unitId ?? '');
+  const { data: audit } = useLeaseAudit(leaseId);
 
+  const [tab, setTab] = useState<TabKey>('overview');
   const [editOpen, setEditOpen] = useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [toast, setToast] = useState<{ message: string; severity: 'success' | 'error' } | null>(null);
@@ -128,6 +136,14 @@ export function LeaseDetailScreen({ leaseId }: LeaseDetailScreenProps) {
         <StatTile label="Renewal status" value={RENEWAL_STATUS_LABELS[lease.renewalStatus]} />
       </Stack>
 
+      <Tabs value={tab} onChange={(_e, v: TabKey) => setTab(v)} sx={{ borderBottom: `1px solid ${tokens.slate[200]}`, mb: 2.5 }}>
+        <Tab value="overview" label="Overview" sx={{ textTransform: 'none', fontWeight: 600 }} />
+        <Tab value="rentHistory" label="Rent History" sx={{ textTransform: 'none', fontWeight: 600 }} />
+        <Tab value="documents" label="Documents" sx={{ textTransform: 'none', fontWeight: 600 }} />
+        <Tab value="changeLog" label="Change Log" sx={{ textTransform: 'none', fontWeight: 600 }} />
+      </Tabs>
+
+      {tab === 'overview' && (
       <Stack direction={{ xs: 'column', md: 'row' }} spacing={2.5} sx={{ alignItems: 'flex-start' }}>
         <Stack spacing={2.5} sx={{ flex: '2 1 480px', minWidth: 0, width: '100%' }}>
           <Paper variant="outlined" sx={{ p: 3 }}>
@@ -190,6 +206,35 @@ export function LeaseDetailScreen({ leaseId }: LeaseDetailScreenProps) {
           </Paper>
         </Stack>
       </Stack>
+      )}
+
+      {tab === 'rentHistory' && <LeaseRentHistorySection leaseId={leaseId} />}
+      {tab === 'documents' && <LeaseDocumentsSection leaseId={leaseId} />}
+      {tab === 'changeLog' && (
+        <Paper variant="outlined" sx={{ p: 3 }}>
+          <Typography sx={{ fontSize: 13, fontWeight: 600, color: tokens.slate[700], mb: 2 }}>Change log</Typography>
+          {audit && audit.length > 0 ? (
+            <Stack spacing={2}>
+              {audit.map((e) => (
+                <Box key={e.id} sx={{ borderBottom: `1px solid ${tokens.slate[100]}`, pb: 1.5 }}>
+                  <Typography sx={{ fontSize: 12.5, fontWeight: 600, color: tokens.slate[700] }}>
+                    {e.action.replace(/_/g, ' ')} · {formatDate(e.createdAt)}
+                  </Typography>
+                  {Object.entries(e.changes).map(([field, c]) => (
+                    <Typography key={field} sx={{ fontSize: 12, color: tokens.slate[500] }}>
+                      {field.replace(/_/g, ' ')}: {c.old == null ? '—' : String(c.old)} → {c.new == null ? '—' : String(c.new)}
+                    </Typography>
+                  ))}
+                </Box>
+              ))}
+            </Stack>
+          ) : (
+            <Typography sx={{ fontSize: 13.5, color: tokens.slate[400], py: 3, textAlign: 'center' }}>
+              No rent changes, renewals, or terminations recorded yet.
+            </Typography>
+          )}
+        </Paper>
+      )}
 
       <LeaseFormDialog
         open={editOpen}

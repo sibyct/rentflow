@@ -27,9 +27,8 @@ import UploadFileOutlined from '@mui/icons-material/UploadFileOutlined';
 import { ApiError } from '@/api/client';
 import { tokens } from '@/app/tokens';
 import { attachmentsApi, ALLOWED_ATTACHMENT_TYPES, validateAttachmentFile } from '@/shared/lib/attachmentsApi';
-import { useLeasesPortfolio } from '@/features/leases/hooks/useLeasesQueries';
-import { useAddUnitDocument, useDeleteUnitDocument, useUnitDocuments } from '../hooks/useUnitDocumentsQueries';
-import { UNIT_DOCUMENT_CATEGORIES, UNIT_DOCUMENT_CATEGORY_LABELS, type UnitDocument, type UnitDocumentCategory } from '../types';
+import { useAddLeaseDocument, useDeleteLeaseDocument, useLeaseDocuments } from '../hooks/useLeasesQueries';
+import { LEASE_DOCUMENT_CATEGORIES, LEASE_DOCUMENT_CATEGORY_LABELS, type LeaseDocument, type LeaseDocumentCategory } from '../types';
 
 const dateFormatter = new Intl.DateTimeFormat('en-US', { dateStyle: 'medium' });
 
@@ -44,35 +43,28 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-interface UnitDocumentsSectionProps {
-  unitId: string;
+interface LeaseDocumentsSectionProps {
+  leaseId: string;
 }
 
 /**
- * Unit-level Documents tab (FR6-FR9 of the Unit Detail redesign) — a
- * growing list, so this calls attachmentsApi.upload directly rather
- * than reusing FileUpload (built for one optional attachment slot).
- * Only ever lists unit_documents rows: no lease-linked attachments
- * exist today for FR9 to worry about duplicating.
+ * A lease's own Documents tab (R14) — a signed agreement, an addendum,
+ * a notice. Lives only here: never duplicated onto this lease's unit's
+ * Documents tab. Mirrors UnitDocumentsSection's upload-flow component
+ * exactly, parameterized by the lease document endpoints instead.
  */
-export function UnitDocumentsSection({ unitId }: UnitDocumentsSectionProps) {
+export function LeaseDocumentsSection({ leaseId }: LeaseDocumentsSectionProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
-  const [category, setCategory] = useState<UnitDocumentCategory>('other');
-  const [relatedLeaseId, setRelatedLeaseId] = useState('');
+  const [category, setCategory] = useState<LeaseDocumentCategory>('other');
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<UnitDocument | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<LeaseDocument | null>(null);
   const [toast, setToast] = useState<{ message: string; severity: 'success' | 'error' } | null>(null);
 
-  const { data: documents, isLoading } = useUnitDocuments(unitId);
-  const addDocument = useAddUnitDocument(unitId);
-  const deleteDocument = useDeleteUnitDocument(unitId);
-  // Every lease this unit has ever had, for the optional Related Lease
-  // picker below (R15) — a document may reference any of them, not
-  // just the currently active one.
-  const { data: leaseData } = useLeasesPortfolio({ unitId, limit: 100, offset: 0 });
-  const unitLeases = leaseData?.leases ?? [];
+  const { data: documents, isLoading } = useLeaseDocuments(leaseId);
+  const addDocument = useAddLeaseDocument(leaseId);
+  const deleteDocument = useDeleteLeaseDocument(leaseId);
 
   function handleFileSelected(file: File) {
     const problem = validateAttachmentFile(file);
@@ -90,11 +82,10 @@ export function UnitDocumentsSection({ unitId }: UnitDocumentsSectionProps) {
     setUploadError(null);
     try {
       const uploaded = await attachmentsApi.upload(pendingFile);
-      await addDocument.mutateAsync({ attachmentId: uploaded.id, category, relatedLeaseId: relatedLeaseId || undefined });
+      await addDocument.mutateAsync({ attachmentId: uploaded.id, category });
       setToast({ message: 'Document added', severity: 'success' });
       setPendingFile(null);
       setCategory('other');
-      setRelatedLeaseId('');
     } catch (err) {
       setUploadError(
         err instanceof ApiError && err.status === 503
@@ -109,7 +100,7 @@ export function UnitDocumentsSection({ unitId }: UnitDocumentsSectionProps) {
     }
   }
 
-  async function viewDocument(d: UnitDocument) {
+  async function viewDocument(d: LeaseDocument) {
     try {
       const { url } = await attachmentsApi.getUrl(d.attachmentId);
       window.open(url, '_blank', 'noopener,noreferrer');
@@ -170,15 +161,8 @@ export function UnitDocumentsSection({ unitId }: UnitDocumentsSectionProps) {
                 </TableCell>
                 <TableCell>
                   <Stack direction="row" spacing={0.5} sx={{ flexWrap: 'wrap' }}>
-                    <Chip label={UNIT_DOCUMENT_CATEGORY_LABELS[d.category]} size="small" variant="outlined" />
+                    <Chip label={LEASE_DOCUMENT_CATEGORY_LABELS[d.category]} size="small" variant="outlined" />
                     {d.isAutomated && <Chip label="Auto" size="small" color="info" variant="outlined" />}
-                    {d.relatedLeaseId && (
-                      <Chip
-                        label={unitLeases.find((l) => l.id === d.relatedLeaseId)?.primaryResidentName ?? 'Linked lease'}
-                        size="small"
-                        variant="outlined"
-                      />
-                    )}
                   </Stack>
                 </TableCell>
                 <TableCell>
@@ -213,32 +197,13 @@ export function UnitDocumentsSection({ unitId }: UnitDocumentsSectionProps) {
               select
               label="Category"
               value={category}
-              onChange={(e) => setCategory(e.target.value as UnitDocumentCategory)}
+              onChange={(e) => setCategory(e.target.value as LeaseDocumentCategory)}
               disabled={uploading}
               fullWidth
             >
-              {UNIT_DOCUMENT_CATEGORIES.map((c) => (
+              {LEASE_DOCUMENT_CATEGORIES.map((c) => (
                 <MenuItem key={c} value={c}>
-                  {UNIT_DOCUMENT_CATEGORY_LABELS[c]}
-                </MenuItem>
-              ))}
-            </TextField>
-            <TextField
-              select
-              label="Related lease"
-              value={relatedLeaseId}
-              onChange={(e) => setRelatedLeaseId(e.target.value)}
-              disabled={uploading}
-              fullWidth
-              helperText="Optional — links this document to a specific lease on this unit."
-            >
-              <MenuItem value="">
-                <em>None</em>
-              </MenuItem>
-              {unitLeases.map((l) => (
-                <MenuItem key={l.id} value={l.id}>
-                  {l.primaryResidentName} ({l.startDate}
-                  {l.endDate ? ` – ${l.endDate}` : ''})
+                  {LEASE_DOCUMENT_CATEGORY_LABELS[c]}
                 </MenuItem>
               ))}
             </TextField>

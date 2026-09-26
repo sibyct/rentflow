@@ -252,15 +252,24 @@ func (h *UnitHandler) AddDocument(w http.ResponseWriter, r *http.Request) {
 		response.WriteError(w, r, err)
 		return
 	}
-	attachmentIDStr, category := req.ToDomain()
+	attachmentIDStr, category, relatedLeaseIDStr := req.ToDomain()
 	attachmentID, err := uuid.Parse(attachmentIDStr)
 	if err != nil {
 		response.WriteError(w, r, fmt.Errorf("add unit document: attachment_id %q: %w", attachmentIDStr, domain.ErrInvalidInput))
 		return
 	}
+	var relatedLeaseID *uuid.UUID
+	if relatedLeaseIDStr != "" {
+		parsed, err := uuid.Parse(relatedLeaseIDStr)
+		if err != nil {
+			response.WriteError(w, r, fmt.Errorf("add unit document: related_lease_id %q: %w", relatedLeaseIDStr, domain.ErrInvalidInput))
+			return
+		}
+		relatedLeaseID = &parsed
+	}
 
 	access, _ := middleware.PropertyAccessFromContext(r.Context())
-	d, err := h.svc.AddDocument(r.Context(), id, claims.UserID, claims.ActorID, attachmentID, category, access)
+	d, err := h.svc.AddDocument(r.Context(), id, claims.UserID, claims.ActorID, attachmentID, category, relatedLeaseID, access)
 	if err != nil {
 		response.WriteError(w, r, err)
 		return

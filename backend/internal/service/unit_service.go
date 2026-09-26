@@ -22,11 +22,16 @@ type UnitService struct {
 	propertyRepo   domain.PropertyRepository
 	documentRepo   domain.UnitDocumentRepository
 	attachmentRepo domain.AttachmentRepository
-	log            *slog.Logger
+	// leaseRepo backs DeleteUnit's active-lease guard (R13) and
+	// AddDocument's related-lease validation (R15) — it is the same
+	// LeaseRepository LeaseService already holds, just a second
+	// consumer of the same port.
+	leaseRepo domain.LeaseRepository
+	log       *slog.Logger
 }
 
-func NewUnitService(repo domain.UnitRepository, propertyRepo domain.PropertyRepository, documentRepo domain.UnitDocumentRepository, attachmentRepo domain.AttachmentRepository, log *slog.Logger) *UnitService {
-	return &UnitService{repo: repo, propertyRepo: propertyRepo, documentRepo: documentRepo, attachmentRepo: attachmentRepo, log: log}
+func NewUnitService(repo domain.UnitRepository, propertyRepo domain.PropertyRepository, documentRepo domain.UnitDocumentRepository, attachmentRepo domain.AttachmentRepository, leaseRepo domain.LeaseRepository, log *slog.Logger) *UnitService {
+	return &UnitService{repo: repo, propertyRepo: propertyRepo, documentRepo: documentRepo, attachmentRepo: attachmentRepo, leaseRepo: leaseRepo, log: log}
 }
 
 var _ domain.UnitService = (*UnitService)(nil)
@@ -224,27 +229,30 @@ func (s *UnitService) UpdateUnit(ctx context.Context, id, ownerID uuid.UUID, inp
 		if !input.Status.Valid() {
 			verrs = append(verrs, &domain.ValidationError{Field: "status", Message: fmt.Sprintf("unknown status %q", *input.Status)})
 		} else {
-			// Stamp/clear VacatedAt on the actual transition, not every
-			// update that happens to repeat the current status — a
-			// no-op "still vacant" update shouldn't reset the days-vacant
-			// clock back to zero.
-			if *input.Status == domain.UnitStatusVacant && u.Status != domain.UnitStatusVacant {
-				now := time.Now().UTC()
-				u.VacatedAt = &now
-			} else if *input.Status != domain.UnitStatusVacant {
-				u.VacatedAt = nil
-			}
-			u.Status = *input.Status
+			applyUnitStatusTransition(u, *input.Status, time.Now().UTC())
 		}
 	}
 	if input.MarketRent != nil {
-		u.MarketRent = input.MarketRent
+		if *input.MarketRent < 0 {
+			verrs = append(verrs, &domain.ValidationError{Field: "market_rent", Message: "cannot be negative"})
+		} else {
+			u.MarketRent = input.MarketRent
+		}
 	}
 	if input.CurrentRent != nil {
-		u.CurrentRent = input.CurrentRent
+		// Current Rent is system-derived (the active lease's rent, falling
+		// back to this raw column only while vacant) and must never be set
+		// directly through a standalone edit — see R1/R20. A brand-new
+		// unit's CreateUnitInput.CurrentRent (the vacant fallback) is
+		// unaffected; this only blocks UpdateUnit.
+		verrs = append(verrs, &domain.ValidationError{Field: "current_rent", Message: "is system-derived and cannot be set directly; it follows the unit's active lease"})
 	}
 	if input.SecurityDeposit != nil {
-		u.SecurityDeposit = input.SecurityDeposit
+		if *input.SecurityDeposit < 0 {
+			verrs = append(verrs, &domain.ValidationError{Field: "security_deposit", Message: "cannot be negative"})
+		} else {
+			u.SecurityDeposit = input.SecurityDeposit
+		}
 	}
 	if input.RentDueDay != nil {
 		if *input.RentDueDay < 1 || *input.RentDueDay > 31 {
@@ -277,6 +285,20 @@ func (s *UnitService) DeleteUnit(ctx context.Context, id, ownerID uuid.UUID, acc
 	}
 	if _, err := s.requireOwnedProperty(ctx, u.PropertyID, ownerID, access); err != nil {
 		return fmt.Errorf("delete unit %s: %w", id, err)
+	}
+
+	// A unit with an active lease must have that lease terminated or
+	// reassigned first (R13) — without this check, leases.unit_id's
+	// ON DELETE CASCADE would silently delete the active lease along
+	// with the unit.
+	active, err := s.leaseRepo.HasActiveLease(ctx, id, nil)
+	if err != nil {
+		return fmt.Errorf("delete unit %s: %w", id, err)
+	}
+	if active {
+		return fmt.Errorf("delete unit %s: %w", id, domain.ValidationErrors{
+			{Field: "id", Message: "this unit has an active lease — terminate or reassign it before deleting the unit"},
+		})
 	}
 
 	if err := s.repo.Delete(ctx, id); err != nil {
@@ -328,7 +350,7 @@ func (s *UnitService) ListDocuments(ctx context.Context, unitID, ownerID uuid.UU
 	return docs, nil
 }
 
-func (s *UnitService) AddDocument(ctx context.Context, unitID, ownerID, uploadedBy, attachmentID uuid.UUID, category domain.UnitDocumentCategory, access domain.PropertyAccess) (*domain.UnitDocument, error) {
+func (s *UnitService) AddDocument(ctx context.Context, unitID, ownerID, uploadedBy, attachmentID uuid.UUID, category domain.UnitDocumentCategory, relatedLeaseID *uuid.UUID, access domain.PropertyAccess) (*domain.UnitDocument, error) {
 	if _, err := s.requireOwnedUnit(ctx, unitID, ownerID, access); err != nil {
 		return nil, fmt.Errorf("add document to unit %s: %w", unitID, err)
 	}
@@ -343,14 +365,30 @@ func (s *UnitService) AddDocument(ctx context.Context, unitID, ownerID, uploaded
 			{Field: "category", Message: fmt.Sprintf("unknown category %q", category)},
 		})
 	}
+	if relatedLeaseID != nil {
+		// The related lease must belong to this same unit (R15) — not
+		// just any lease this owner/access can see, the same
+		// "must-belong-to-the-named-parent" check DeleteDocument already
+		// applies below for unitID itself.
+		l, err := s.leaseRepo.GetByID(ctx, *relatedLeaseID)
+		if err != nil {
+			return nil, fmt.Errorf("add document to unit %s: %w", unitID, err)
+		}
+		if l.UnitID != unitID {
+			return nil, fmt.Errorf("add document to unit %s: %w", unitID, domain.ValidationErrors{
+				{Field: "related_lease_id", Message: "must be a lease on this unit"},
+			})
+		}
+	}
 
 	d := &domain.UnitDocument{
-		ID:           uuid.New(),
-		UnitID:       unitID,
-		AttachmentID: attachmentID,
-		Category:     category,
-		UploadedBy:   uploadedBy,
-		CreatedAt:    time.Now().UTC(),
+		ID:             uuid.New(),
+		UnitID:         unitID,
+		AttachmentID:   attachmentID,
+		Category:       category,
+		UploadedBy:     uploadedBy,
+		RelatedLeaseID: relatedLeaseID,
+		CreatedAt:      time.Now().UTC(),
 	}
 	if err := s.documentRepo.Create(ctx, d); err != nil {
 		return nil, fmt.Errorf("add document to unit %s: %w", unitID, err)
@@ -405,6 +443,23 @@ func (s *UnitService) requireOwnedProperty(ctx context.Context, propertyID, owne
 		return nil, domain.ErrNotFound
 	}
 	return p, nil
+}
+
+// applyUnitStatusTransition sets u.Status and stamps/clears VacatedAt on
+// the actual transition, not every call that happens to repeat the
+// current status — a no-op "still vacant" update shouldn't reset the
+// days-vacant clock back to zero. Shared by UnitService.UpdateUnit and
+// LeaseService's lease-lifecycle wiring (CreateLease/UpdateLease/
+// GenerateRenewalLease setting a unit Occupied per R11, TerminateLease
+// setting it Vacant per R10) so the stamping rule lives in exactly one
+// place.
+func applyUnitStatusTransition(u *domain.Unit, newStatus domain.UnitStatus, now time.Time) {
+	if newStatus == domain.UnitStatusVacant && u.Status != domain.UnitStatusVacant {
+		u.VacatedAt = &now
+	} else if newStatus != domain.UnitStatusVacant {
+		u.VacatedAt = nil
+	}
+	u.Status = newStatus
 }
 
 func newUnitFromInput(input domain.CreateUnitInput) *domain.Unit {

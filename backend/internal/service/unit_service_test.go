@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -125,7 +126,7 @@ func setupUnitTest(t *testing.T) (*service.UnitService, *fakePropertyRepository,
 	t.Helper()
 	propertyRepo := newFakePropertyRepository()
 	unitRepo := newFakeUnitRepository()
-	svc := service.NewUnitService(unitRepo, propertyRepo, newFakeUnitDocumentRepository(), newFakeAttachmentRepository(), noopLogger())
+	svc := service.NewUnitService(unitRepo, propertyRepo, newFakeUnitDocumentRepository(), newFakeAttachmentRepository(), newFakeLeaseRepository(), noopLogger())
 
 	ownerID := uuid.New()
 	property := &domain.Property{
@@ -384,6 +385,49 @@ func TestUnitService_GetPropertyUnitStats(t *testing.T) {
 		_, err := svc.GetPropertyUnitStats(context.Background(), property.ID, uuid.New(), domain.AllPropertyAccess())
 		if !errors.Is(err, domain.ErrNotFound) {
 			t.Fatalf("GetPropertyUnitStats() error = %v, want %v", err, domain.ErrNotFound)
+		}
+	})
+}
+
+// TestUnitService_DeleteUnit_ActiveLeaseGuard regression-tests R13: a
+// unit with an active lease must not be deletable, since
+// leases.unit_id is ON DELETE CASCADE and would otherwise silently
+// delete the active lease along with the unit.
+func TestUnitService_DeleteUnit_ActiveLeaseGuard(t *testing.T) {
+	propertyRepo := newFakePropertyRepository()
+	unitRepo := newFakeUnitRepository()
+	leaseRepo := newFakeLeaseRepository()
+	svc := service.NewUnitService(unitRepo, propertyRepo, newFakeUnitDocumentRepository(), newFakeAttachmentRepository(), leaseRepo, noopLogger())
+
+	ownerID := uuid.New()
+	property := &domain.Property{ID: uuid.New(), Name: "Willow Creek Apartments", Type: domain.PropertyTypeResidentialMultiUnit, AddressLine1: "123 Main St", OwnerID: ownerID}
+	propertyRepo.properties[property.ID] = property
+	unit := &domain.Unit{ID: uuid.New(), PropertyID: property.ID, UnitName: "1A", Type: domain.UnitTypeOneBed, Status: domain.UnitStatusOccupied}
+	unitRepo.units[unit.ID] = unit
+	lease := &domain.Lease{ID: uuid.New(), UnitID: unit.ID, Status: domain.LeaseStatusActive, Type: domain.LeaseTypeMonthToMonth, StartDate: time.Now(), MonthlyRent: 1500, PrimaryResidentName: "Jordan Rivera"}
+	leaseRepo.leases[lease.ID] = lease
+
+	t.Run("blocked while an active lease exists", func(t *testing.T) {
+		err := svc.DeleteUnit(context.Background(), unit.ID, ownerID, domain.AllPropertyAccess())
+		var verrs domain.ValidationErrors
+		if !errors.As(err, &verrs) {
+			t.Fatalf("DeleteUnit() error = %v, want a ValidationErrors failure", err)
+		}
+		if _, ok := unitRepo.units[unit.ID]; !ok {
+			t.Error("DeleteUnit() removed the unit despite an active lease")
+		}
+		if _, ok := leaseRepo.leases[lease.ID]; !ok {
+			t.Error("DeleteUnit() removed the active lease")
+		}
+	})
+
+	t.Run("allowed once the lease is no longer active", func(t *testing.T) {
+		lease.Status = domain.LeaseStatusTerminated
+		if err := svc.DeleteUnit(context.Background(), unit.ID, ownerID, domain.AllPropertyAccess()); err != nil {
+			t.Fatalf("DeleteUnit() unexpected error = %v", err)
+		}
+		if _, ok := unitRepo.units[unit.ID]; ok {
+			t.Error("DeleteUnit() did not remove the unit")
 		}
 	})
 }

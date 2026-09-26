@@ -168,6 +168,36 @@ func NewRouter(cfg RouterConfig) http.Handler {
 				r.Get("/{id}", leaseHandler.Get)
 				r.Put("/{id}", leaseHandler.Update)
 				r.Delete("/{id}", leaseHandler.Delete)
+
+				// Rent Integrity: R3/R4/R6 — the only way to change an
+				// active lease's effective rent (never a direct field
+				// edit through Update above).
+				r.Get("/{id}/rent-history", leaseHandler.ListRentHistory)
+				r.Post("/{id}/rent-changes", leaseHandler.ChangeRent)
+
+				// Renewals: R7/R8/R9 — turns an Accepted renewal into a
+				// new, real Lease record.
+				r.Post("/{id}/renewal-generate", leaseHandler.GenerateRenewal)
+
+				// Termination & Vacancy: R10/R15 — the dedicated action
+				// that also sets the unit Vacant and can auto-link a
+				// move-out inspection document.
+				r.Post("/{id}/terminate", leaseHandler.Terminate)
+
+				// A separate, explicitly-labeled action for fixing a
+				// mistake in an already-terminated lease's termination
+				// record — never a silent inline edit; requires a
+				// reason and is captured in the audit trail (R18).
+				r.Post("/{id}/termination-correction", leaseHandler.CorrectTermination)
+
+				// Data Consistency: R18 — this lease's audit trail.
+				r.Get("/{id}/audit", leaseHandler.AuditLog)
+
+				// Documents & History: R14 — a lease's own Documents tab,
+				// never duplicated onto its unit's Documents tab.
+				r.Get("/{id}/documents", leaseHandler.ListDocuments)
+				r.Post("/{id}/documents", leaseHandler.AddDocument)
+				r.Delete("/{id}/documents/{documentId}", leaseHandler.DeleteDocument)
 			})
 
 			// The global Maintenance page: every work order across every

@@ -45,6 +45,12 @@ const OPEN_STATUSES = new Set(['new', 'assigned', 'in_progress', 'on_hold']);
 
 const currency = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
 
+/** Current Rent's display value — "Vacant" (not a stale value from a past lease) whenever the unit has no active lease, per R12. */
+function formatCurrentRent(unit: { status: UnitStatus; currentRent: number | null }): string {
+  if (unit.currentRent != null) return currency.format(unit.currentRent);
+  return unit.status === 'vacant' ? 'Vacant' : '—';
+}
+
 type TabKey = 'overview' | 'leaseHistory' | 'documents' | 'maintenance';
 
 interface UnitDetailScreenProps {
@@ -191,7 +197,7 @@ export function UnitDetailScreen({ unitId }: UnitDetailScreenProps) {
 
       <Stack direction="row" spacing={2} sx={{ flexWrap: 'wrap', mb: 2.5 }}>
         <StatTile label="Status" value={UNIT_STATUS_LABELS[unit.status]} />
-        <StatTile label="Monthly rent" value={unit.currentRent != null ? currency.format(unit.currentRent) : '—'} />
+        <StatTile label="Monthly rent" value={formatCurrentRent(unit)} />
         <StatTile
           label="Current lease"
           value={activeLease ? activeLease.primaryResidentName : 'None'}
@@ -225,7 +231,7 @@ export function UnitDetailScreen({ unitId }: UnitDetailScreenProps) {
                 <Typography sx={{ fontSize: 13, fontWeight: 600, color: tokens.slate[700], mb: 1.5 }}>Rent</Typography>
                 <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)' }, gap: 2 }}>
                   <Field label="Market rent" value={unit.marketRent != null ? currency.format(unit.marketRent) : ''} />
-                  <Field label="Current rent" value={unit.currentRent != null ? currency.format(unit.currentRent) : ''} />
+                  <Field label="Current rent" value={formatCurrentRent(unit)} />
                   <Field label="Security deposit" value={unit.securityDeposit != null ? currency.format(unit.securityDeposit) : ''} />
                   <Field label="Rent due day" value={unit.rentDueDay != null ? String(unit.rentDueDay) : ''} />
                 </Box>

@@ -83,7 +83,7 @@ export const UNIT_DOCUMENT_CATEGORY_LABELS: Record<UnitDocumentCategory, string>
   other: 'Other',
 };
 
-/** A unit-level file (inspection report, manual, photo) — distinct from any lease-linked attachment, of which none exist today. See the Unit Detail page's Documents tab. */
+/** A unit-level file (inspection report, manual, photo). RelatedLeaseId is an optional cross-reference to a specific lease on this unit (R15) — it never makes this a lease-scoped document, lease-specific documents live only on their own lease's Documents tab (see features/leases' LeaseDocument, R14). IsAutomated marks a document a lease action (e.g. TerminateLease's move-out inspection) created on its own. */
 export interface UnitDocument {
   id: string;
   unitId: string;
@@ -91,6 +91,8 @@ export interface UnitDocument {
   category: UnitDocumentCategory;
   uploadedBy: string;
   uploadedByName: string;
+  relatedLeaseId: string;
+  isAutomated: boolean;
   filename: string;
   contentType: string;
   sizeBytes: number;

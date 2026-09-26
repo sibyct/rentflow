@@ -102,11 +102,12 @@ func run() error {
 	outboxRepo := postgres.NewEmailOutboxRepository(pool)
 	attachmentRepo := postgres.NewAttachmentRepository(pool)
 	unitDocumentRepo := postgres.NewUnitDocumentRepository(pool)
+	leaseDocumentRepo := postgres.NewLeaseDocumentRepository(pool)
 
 	var cache domain.Cache
 	propertyService := service.NewPropertyService(propertyRepo, unitRepo, cache, log)
-	unitService := service.NewUnitService(unitRepo, propertyRepo, unitDocumentRepo, attachmentRepo, log)
-	leaseService := service.NewLeaseService(leaseRepo, unitRepo, propertyRepo, log)
+	unitService := service.NewUnitService(unitRepo, propertyRepo, unitDocumentRepo, attachmentRepo, leaseRepo, log)
+	leaseService := service.NewLeaseService(leaseRepo, unitRepo, propertyRepo, leaseDocumentRepo, attachmentRepo, log)
 	workOrderService := service.NewWorkOrderService(workOrderRepo, unitRepo, propertyRepo, vendorRepo, attachmentRepo, log)
 	vendorService := service.NewVendorService(vendorRepo, propertyRepo, attachmentRepo, log)
 	ledgerService := service.NewLedgerService(ledgerRepo, leaseRepo, unitRepo, propertyRepo, log)

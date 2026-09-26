@@ -227,10 +227,18 @@ func (c UnitDocumentCategory) Valid() bool {
 }
 
 // UnitDocument is a unit-level file — an inspection report, a manual, a
-// photo — distinct from any lease-linked attachment (none exist today;
-// see the Unit Detail page's Documents tab). UploadedByName/Filename/
-// ContentType/SizeBytes are joined in for a list response; a create
-// request only ever needs AttachmentID.
+// photo. UploadedByName/Filename/ContentType/SizeBytes are joined in
+// for a list response; a create request only ever needs AttachmentID.
+//
+// RelatedLeaseID is an optional reference to a specific lease on this
+// unit (e.g. a move-out inspection tied to the lease that just
+// terminated) — see R15. It never makes this a lease-scoped document:
+// lease-specific documents live only on LeaseDocument/the lease's own
+// Documents tab (see R14), this is just an optional cross-reference on
+// an otherwise unit-level document. IsAutomated marks a document a
+// lease action (TerminateLease) created on its own, with RelatedLeaseID
+// set automatically, rather than one a staff member manually uploaded
+// and tagged.
 type UnitDocument struct {
 	ID             uuid.UUID
 	UnitID         uuid.UUID
@@ -238,6 +246,8 @@ type UnitDocument struct {
 	Category       UnitDocumentCategory
 	UploadedBy     uuid.UUID
 	UploadedByName string
+	RelatedLeaseID *uuid.UUID
+	IsAutomated    bool
 	Filename       string
 	ContentType    string
 	SizeBytes      int64
@@ -318,7 +328,8 @@ type UnitService interface {
 	ListDocuments(ctx context.Context, unitID, ownerID uuid.UUID, access PropertyAccess) ([]*UnitDocument, error)
 	// AddDocument's uploadedBy is the actor actually signed in
 	// (claims.ActorID), not the account owner — see AuthClaims's doc
-	// comment on UserID vs ActorID.
-	AddDocument(ctx context.Context, unitID, ownerID, uploadedBy, attachmentID uuid.UUID, category UnitDocumentCategory, access PropertyAccess) (*UnitDocument, error)
+	// comment on UserID vs ActorID. relatedLeaseID is optional (R15) and,
+	// when non-nil, must name a lease belonging to this same unit.
+	AddDocument(ctx context.Context, unitID, ownerID, uploadedBy, attachmentID uuid.UUID, category UnitDocumentCategory, relatedLeaseID *uuid.UUID, access PropertyAccess) (*UnitDocument, error)
 	DeleteDocument(ctx context.Context, unitID, documentID, ownerID uuid.UUID, access PropertyAccess) error
 }

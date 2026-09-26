@@ -112,6 +112,9 @@ type UpdateLeaseRequest struct {
 	CoResidents           []string `json:"co_residents" validate:"omitempty,max=10,dive,max=200,noctrl"`
 	EmergencyContact      *string  `json:"emergency_contact" validate:"omitempty,max=200,noctrl"`
 	RenewalStatus         *string  `json:"renewal_status" validate:"omitempty,oneof=not_started offered accepted declined"`
+	ProposedRent          *float64 `json:"proposed_rent" validate:"omitempty,min=0"`
+	ProposedEndDate       *string  `json:"proposed_end_date" validate:"omitempty,datetime=2006-01-02"`
+	OfferSentDate         *string  `json:"offer_sent_date" validate:"omitempty,datetime=2006-01-02"`
 	TerminationReason     *string  `json:"termination_reason" validate:"omitempty,oneof=non_renewal eviction mutual resident_notice other"`
 	TerminationNoticeDate *string  `json:"termination_notice_date" validate:"omitempty,datetime=2006-01-02"`
 	Signed                *bool    `json:"signed"`
@@ -152,6 +155,7 @@ func (r UpdateLeaseRequest) ToDomain() (domain.UpdateLeaseInput, error) {
 		PrimaryResidentEmail: r.PrimaryResidentEmail,
 		CoResidents:          r.CoResidents,
 		EmergencyContact:     r.EmergencyContact,
+		ProposedRent:         r.ProposedRent,
 		Signed:               r.Signed,
 		Notes:                r.Notes,
 	}
@@ -177,6 +181,12 @@ func (r UpdateLeaseRequest) ToDomain() (domain.UpdateLeaseInput, error) {
 	}
 
 	var err error
+	if input.ProposedEndDate, err = parseOptionalLeaseDate(derefString(r.ProposedEndDate)); err != nil {
+		return domain.UpdateLeaseInput{}, fmt.Errorf("proposed_end_date: %w", err)
+	}
+	if input.OfferSentDate, err = parseOptionalLeaseDate(derefString(r.OfferSentDate)); err != nil {
+		return domain.UpdateLeaseInput{}, fmt.Errorf("offer_sent_date: %w", err)
+	}
 	if input.StartDate, err = parseOptionalLeaseDate(derefString(r.StartDate)); err != nil {
 		return domain.UpdateLeaseInput{}, fmt.Errorf("start_date: %w", err)
 	}
@@ -241,8 +251,13 @@ type LeaseResponse struct {
 	CoResidents           []string `json:"co_residents"`
 	EmergencyContact      string   `json:"emergency_contact,omitempty"`
 	RenewalStatus         string   `json:"renewal_status"`
+	ProposedRent          *float64 `json:"proposed_rent,omitempty"`
+	ProposedEndDate       string   `json:"proposed_end_date,omitempty"`
+	OfferSentDate         string   `json:"offer_sent_date,omitempty"`
 	TerminationReason     string   `json:"termination_reason,omitempty"`
 	TerminationNoticeDate string   `json:"termination_notice_date,omitempty"`
+	RenewedIntoLeaseID    string   `json:"renewed_into_lease_id,omitempty"`
+	RenewedFromLeaseID    string   `json:"renewed_from_lease_id,omitempty"`
 	Signed                bool     `json:"signed"`
 	SignedDate            string   `json:"signed_date,omitempty"`
 	Notes                 string   `json:"notes,omitempty"`
@@ -269,6 +284,7 @@ func NewLeaseResponse(l *domain.Lease) LeaseResponse {
 		CoResidents:          l.CoResidents,
 		EmergencyContact:     l.EmergencyContact,
 		RenewalStatus:        string(l.RenewalStatus),
+		ProposedRent:         l.ProposedRent,
 		Signed:               l.Signed,
 		Notes:                l.Notes,
 		CreatedAt:            l.CreatedAt.Format(time.RFC3339),
@@ -286,11 +302,23 @@ func NewLeaseResponse(l *domain.Lease) LeaseResponse {
 	if l.DepositStatus != nil {
 		resp.DepositStatus = string(*l.DepositStatus)
 	}
+	if l.ProposedEndDate != nil {
+		resp.ProposedEndDate = l.ProposedEndDate.Format(leaseDateLayout)
+	}
+	if l.OfferSentDate != nil {
+		resp.OfferSentDate = l.OfferSentDate.Format(leaseDateLayout)
+	}
 	if l.TerminationReason != nil {
 		resp.TerminationReason = string(*l.TerminationReason)
 	}
 	if l.TerminationNoticeDate != nil {
 		resp.TerminationNoticeDate = l.TerminationNoticeDate.Format(leaseDateLayout)
+	}
+	if l.RenewedIntoLeaseID != nil {
+		resp.RenewedIntoLeaseID = l.RenewedIntoLeaseID.String()
+	}
+	if l.RenewedFromLeaseID != nil {
+		resp.RenewedFromLeaseID = l.RenewedFromLeaseID.String()
 	}
 	if l.SignedDate != nil {
 		resp.SignedDate = l.SignedDate.Format(leaseDateLayout)

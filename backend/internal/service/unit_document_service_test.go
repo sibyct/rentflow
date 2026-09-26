@@ -58,7 +58,7 @@ func setupUnitDocumentTest(t *testing.T) (*service.UnitService, *fakeUnitDocumen
 	unitRepo := newFakeUnitRepository()
 	documentRepo := newFakeUnitDocumentRepository()
 	attachmentRepo := newFakeAttachmentRepository()
-	svc := service.NewUnitService(unitRepo, propertyRepo, documentRepo, attachmentRepo, noopLogger())
+	svc := service.NewUnitService(unitRepo, propertyRepo, documentRepo, attachmentRepo, newFakeLeaseRepository(), noopLogger())
 
 	ownerID := uuid.New()
 	property := &domain.Property{ID: uuid.New(), Name: "Willow Creek Apartments", Type: domain.PropertyTypeResidentialMultiUnit, AddressLine1: "123 Main St", OwnerID: ownerID}
@@ -76,7 +76,7 @@ func TestUnitService_AddDocument(t *testing.T) {
 	uploader := uuid.New()
 
 	t.Run("valid input creates a document", func(t *testing.T) {
-		got, err := svc.AddDocument(context.Background(), unit.ID, ownerID, uploader, photoID, domain.UnitDocumentCategoryInspection, domain.AllPropertyAccess())
+		got, err := svc.AddDocument(context.Background(), unit.ID, ownerID, uploader, photoID, domain.UnitDocumentCategoryInspection, nil, domain.AllPropertyAccess())
 		if err != nil {
 			t.Fatalf("AddDocument() unexpected error = %v", err)
 		}
@@ -89,7 +89,7 @@ func TestUnitService_AddDocument(t *testing.T) {
 	})
 
 	t.Run("unknown category is rejected", func(t *testing.T) {
-		_, err := svc.AddDocument(context.Background(), unit.ID, ownerID, uploader, photoID, "castle", domain.AllPropertyAccess())
+		_, err := svc.AddDocument(context.Background(), unit.ID, ownerID, uploader, photoID, "castle", nil, domain.AllPropertyAccess())
 		var verrs domain.ValidationErrors
 		if !errors.As(err, &verrs) || !hasField(verrs, "category") {
 			t.Fatalf("AddDocument() error = %v, want a ValidationErrors failure for field %q", err, "category")
@@ -98,7 +98,7 @@ func TestUnitService_AddDocument(t *testing.T) {
 
 	t.Run("attachment owned by someone else is rejected", func(t *testing.T) {
 		foreignID := newFakeReadyAttachment(attachmentRepo, uuid.New())
-		_, err := svc.AddDocument(context.Background(), unit.ID, ownerID, uploader, foreignID, domain.UnitDocumentCategoryOther, domain.AllPropertyAccess())
+		_, err := svc.AddDocument(context.Background(), unit.ID, ownerID, uploader, foreignID, domain.UnitDocumentCategoryOther, nil, domain.AllPropertyAccess())
 		var verrs domain.ValidationErrors
 		if !errors.As(err, &verrs) || !hasField(verrs, "attachment_id") {
 			t.Fatalf("AddDocument() error = %v, want a ValidationErrors failure for field %q", err, "attachment_id")
@@ -106,7 +106,7 @@ func TestUnitService_AddDocument(t *testing.T) {
 	})
 
 	t.Run("unit belongs to a different owner reads as not found", func(t *testing.T) {
-		_, err := svc.AddDocument(context.Background(), unit.ID, uuid.New(), uploader, photoID, domain.UnitDocumentCategoryOther, domain.AllPropertyAccess())
+		_, err := svc.AddDocument(context.Background(), unit.ID, uuid.New(), uploader, photoID, domain.UnitDocumentCategoryOther, nil, domain.AllPropertyAccess())
 		if !errors.Is(err, domain.ErrNotFound) {
 			t.Fatalf("AddDocument() error = %v, want %v", err, domain.ErrNotFound)
 		}
@@ -115,7 +115,7 @@ func TestUnitService_AddDocument(t *testing.T) {
 	// Property-scope enforcement (Piece 1): a staff member scoped away
 	// from this unit's parent property must read it as not-found.
 	t.Run("owned but outside scoped access", func(t *testing.T) {
-		_, err := svc.AddDocument(context.Background(), unit.ID, ownerID, uploader, photoID, domain.UnitDocumentCategoryOther, domain.PropertyAccess{PropertyIDs: []uuid.UUID{uuid.New()}})
+		_, err := svc.AddDocument(context.Background(), unit.ID, ownerID, uploader, photoID, domain.UnitDocumentCategoryOther, nil, domain.PropertyAccess{PropertyIDs: []uuid.UUID{uuid.New()}})
 		if !errors.Is(err, domain.ErrNotFound) {
 			t.Fatalf("AddDocument() error = %v, want %v", err, domain.ErrNotFound)
 		}

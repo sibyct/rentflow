@@ -168,6 +168,300 @@ func (h *LeaseHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// ListRentHistory backs the Lease Detail page's Rent History tab (R4).
+func (h *LeaseHandler) ListRentHistory(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.ClaimsFromContext(r.Context())
+	if !ok {
+		response.WriteError(w, r, fmt.Errorf("list rent history: %w", domain.ErrUnauthorized))
+		return
+	}
+
+	id, err := parseLeaseIDParam(r)
+	if err != nil {
+		response.WriteError(w, r, err)
+		return
+	}
+
+	access, _ := middleware.PropertyAccessFromContext(r.Context())
+	history, err := h.svc.ListRentHistory(r.Context(), id, claims.UserID, access)
+	if err != nil {
+		response.WriteError(w, r, err)
+		return
+	}
+
+	response.JSON(w, http.StatusOK, dto.NewLeaseRentHistoryListResponse(history))
+}
+
+// ChangeRent is the only way a client can alter an active lease's
+// effective rent (R3/R4/R6).
+func (h *LeaseHandler) ChangeRent(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.ClaimsFromContext(r.Context())
+	if !ok {
+		response.WriteError(w, r, fmt.Errorf("change rent: %w", domain.ErrUnauthorized))
+		return
+	}
+
+	id, err := parseLeaseIDParam(r)
+	if err != nil {
+		response.WriteError(w, r, err)
+		return
+	}
+
+	var req dto.ChangeRentRequest
+	if err := decodeAndValidate(r, &req); err != nil {
+		response.WriteError(w, r, err)
+		return
+	}
+	input, err := req.ToDomain()
+	if err != nil {
+		response.WriteError(w, r, fmt.Errorf("change rent: %w: %w", domain.ErrInvalidInput, err))
+		return
+	}
+
+	access, _ := middleware.PropertyAccessFromContext(r.Context())
+	l, err := h.svc.ChangeRent(r.Context(), id, claims.UserID, claims.ActorID, input, access)
+	if err != nil {
+		response.WriteError(w, r, err)
+		return
+	}
+
+	response.JSON(w, http.StatusOK, dto.NewLeaseResponse(l))
+}
+
+// GenerateRenewal turns an Accepted renewal into a new, real Lease
+// record (R7/R8/R9).
+func (h *LeaseHandler) GenerateRenewal(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.ClaimsFromContext(r.Context())
+	if !ok {
+		response.WriteError(w, r, fmt.Errorf("generate renewal lease: %w", domain.ErrUnauthorized))
+		return
+	}
+
+	id, err := parseLeaseIDParam(r)
+	if err != nil {
+		response.WriteError(w, r, err)
+		return
+	}
+
+	var req dto.GenerateRenewalRequest
+	if err := decodeAndValidate(r, &req); err != nil {
+		response.WriteError(w, r, err)
+		return
+	}
+	input, err := req.ToDomain()
+	if err != nil {
+		response.WriteError(w, r, fmt.Errorf("generate renewal lease: %w: %w", domain.ErrInvalidInput, err))
+		return
+	}
+
+	access, _ := middleware.PropertyAccessFromContext(r.Context())
+	l, err := h.svc.GenerateRenewalLease(r.Context(), id, claims.UserID, claims.ActorID, input, access)
+	if err != nil {
+		response.WriteError(w, r, err)
+		return
+	}
+
+	response.JSON(w, http.StatusCreated, dto.NewLeaseResponse(l))
+}
+
+// Terminate is the dedicated action for ending a lease (R10/R15) —
+// distinct from a generic status update so the unit-vacancy wiring and
+// audit entry always happen together.
+func (h *LeaseHandler) Terminate(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.ClaimsFromContext(r.Context())
+	if !ok {
+		response.WriteError(w, r, fmt.Errorf("terminate lease: %w", domain.ErrUnauthorized))
+		return
+	}
+
+	id, err := parseLeaseIDParam(r)
+	if err != nil {
+		response.WriteError(w, r, err)
+		return
+	}
+
+	var req dto.TerminateLeaseRequest
+	if err := decodeAndValidate(r, &req); err != nil {
+		response.WriteError(w, r, err)
+		return
+	}
+	input, err := req.ToDomain()
+	if err != nil {
+		response.WriteError(w, r, fmt.Errorf("terminate lease: %w: %w", domain.ErrInvalidInput, err))
+		return
+	}
+	if req.MoveOutInspectionAttachmentID != "" {
+		attachmentID, err := uuid.Parse(req.MoveOutInspectionAttachmentID)
+		if err != nil {
+			response.WriteError(w, r, fmt.Errorf("terminate lease: move_out_inspection_attachment_id %q: %w", req.MoveOutInspectionAttachmentID, domain.ErrInvalidInput))
+			return
+		}
+		input.MoveOutInspectionAttachmentID = &attachmentID
+	}
+
+	access, _ := middleware.PropertyAccessFromContext(r.Context())
+	l, err := h.svc.TerminateLease(r.Context(), id, claims.UserID, claims.ActorID, input, access)
+	if err != nil {
+		response.WriteError(w, r, err)
+		return
+	}
+
+	response.JSON(w, http.StatusOK, dto.NewLeaseResponse(l))
+}
+
+// CorrectTermination backs the "Correct termination details" action —
+// a separate, explicitly-labeled action for fixing a mistake in an
+// already-terminated lease's termination record, distinct from
+// Terminate and never reachable through a generic field edit.
+func (h *LeaseHandler) CorrectTermination(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.ClaimsFromContext(r.Context())
+	if !ok {
+		response.WriteError(w, r, fmt.Errorf("correct termination: %w", domain.ErrUnauthorized))
+		return
+	}
+
+	id, err := parseLeaseIDParam(r)
+	if err != nil {
+		response.WriteError(w, r, err)
+		return
+	}
+
+	var req dto.CorrectTerminationRequest
+	if err := decodeAndValidate(r, &req); err != nil {
+		response.WriteError(w, r, err)
+		return
+	}
+	input, err := req.ToDomain()
+	if err != nil {
+		response.WriteError(w, r, fmt.Errorf("correct termination: %w: %w", domain.ErrInvalidInput, err))
+		return
+	}
+
+	access, _ := middleware.PropertyAccessFromContext(r.Context())
+	l, err := h.svc.CorrectTermination(r.Context(), id, claims.UserID, claims.ActorID, input, access)
+	if err != nil {
+		response.WriteError(w, r, err)
+		return
+	}
+
+	response.JSON(w, http.StatusOK, dto.NewLeaseResponse(l))
+}
+
+// AuditLog backs the Lease Detail page's Change Log section (R18),
+// mirroring accountingHandler.TransactionAudit's role for a ledger
+// transaction.
+func (h *LeaseHandler) AuditLog(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.ClaimsFromContext(r.Context())
+	if !ok {
+		response.WriteError(w, r, fmt.Errorf("list lease audit: %w", domain.ErrUnauthorized))
+		return
+	}
+
+	id, err := parseLeaseIDParam(r)
+	if err != nil {
+		response.WriteError(w, r, err)
+		return
+	}
+
+	access, _ := middleware.PropertyAccessFromContext(r.Context())
+	entries, err := h.svc.ListAudit(r.Context(), id, claims.UserID, access)
+	if err != nil {
+		response.WriteError(w, r, err)
+		return
+	}
+
+	response.JSON(w, http.StatusOK, dto.NewLeaseAuditListResponse(entries))
+}
+
+// ListDocuments, AddDocument, and DeleteDocument back a lease's own
+// Documents tab (R14) — mirroring UnitHandler's identical trio for
+// unit-level documents.
+func (h *LeaseHandler) ListDocuments(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.ClaimsFromContext(r.Context())
+	if !ok {
+		response.WriteError(w, r, fmt.Errorf("list lease documents: %w", domain.ErrUnauthorized))
+		return
+	}
+
+	id, err := parseLeaseIDParam(r)
+	if err != nil {
+		response.WriteError(w, r, err)
+		return
+	}
+
+	access, _ := middleware.PropertyAccessFromContext(r.Context())
+	docs, err := h.svc.ListDocuments(r.Context(), id, claims.UserID, access)
+	if err != nil {
+		response.WriteError(w, r, err)
+		return
+	}
+
+	response.JSON(w, http.StatusOK, dto.NewLeaseDocumentListResponse(docs))
+}
+
+func (h *LeaseHandler) AddDocument(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.ClaimsFromContext(r.Context())
+	if !ok {
+		response.WriteError(w, r, fmt.Errorf("add lease document: %w", domain.ErrUnauthorized))
+		return
+	}
+
+	id, err := parseLeaseIDParam(r)
+	if err != nil {
+		response.WriteError(w, r, err)
+		return
+	}
+
+	var req dto.AddLeaseDocumentRequest
+	if err := decodeAndValidate(r, &req); err != nil {
+		response.WriteError(w, r, err)
+		return
+	}
+	attachmentIDStr, category := req.ToDomain()
+	attachmentID, err := uuid.Parse(attachmentIDStr)
+	if err != nil {
+		response.WriteError(w, r, fmt.Errorf("add lease document: attachment_id %q: %w", attachmentIDStr, domain.ErrInvalidInput))
+		return
+	}
+
+	access, _ := middleware.PropertyAccessFromContext(r.Context())
+	d, err := h.svc.AddDocument(r.Context(), id, claims.UserID, claims.ActorID, attachmentID, category, access)
+	if err != nil {
+		response.WriteError(w, r, err)
+		return
+	}
+
+	response.JSON(w, http.StatusCreated, dto.NewLeaseDocumentResponse(d))
+}
+
+func (h *LeaseHandler) DeleteDocument(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.ClaimsFromContext(r.Context())
+	if !ok {
+		response.WriteError(w, r, fmt.Errorf("delete lease document: %w", domain.ErrUnauthorized))
+		return
+	}
+
+	id, err := parseLeaseIDParam(r)
+	if err != nil {
+		response.WriteError(w, r, err)
+		return
+	}
+	documentIDParam := chi.URLParam(r, "documentId")
+	documentID, err := uuid.Parse(documentIDParam)
+	if err != nil {
+		response.WriteError(w, r, fmt.Errorf("delete lease document: id %q: %w", documentIDParam, domain.ErrInvalidInput))
+		return
+	}
+
+	access, _ := middleware.PropertyAccessFromContext(r.Context())
+	if err := h.svc.DeleteDocument(r.Context(), id, documentID, claims.UserID, access); err != nil {
+		response.WriteError(w, r, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // parseLeaseListOptions mirrors parseUnitListOptions — unrecognized
 // filter/sort values are a genuine 400, not silently ignored.
 func parseLeaseListOptions(r *http.Request) (domain.LeaseListOptions, error) {

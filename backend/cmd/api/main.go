@@ -131,11 +131,12 @@ func run() error {
 	ledgerRepo := postgres.NewLedgerRepository(pool)
 	attachmentRepo := postgres.NewAttachmentRepository(pool)
 	unitDocumentRepo := postgres.NewUnitDocumentRepository(pool)
+	leaseDocumentRepo := postgres.NewLeaseDocumentRepository(pool)
 
 	// Services: injected with repositories (as domain interfaces) and the logger.
 	propertyService := service.NewPropertyService(propertyRepo, unitRepo, cache, log)
-	unitService := service.NewUnitService(unitRepo, propertyRepo, unitDocumentRepo, attachmentRepo, log)
-	leaseService := service.NewLeaseService(leaseRepo, unitRepo, propertyRepo, log)
+	unitService := service.NewUnitService(unitRepo, propertyRepo, unitDocumentRepo, attachmentRepo, leaseRepo, log)
+	leaseService := service.NewLeaseService(leaseRepo, unitRepo, propertyRepo, leaseDocumentRepo, attachmentRepo, log)
 	workOrderService := service.NewWorkOrderService(workOrderRepo, unitRepo, propertyRepo, vendorRepo, attachmentRepo, log)
 	maintenanceRuleService := service.NewMaintenanceRuleService(maintenanceRuleRepo, workOrderRepo, unitRepo, propertyRepo, log)
 	vendorService := service.NewVendorService(vendorRepo, propertyRepo, attachmentRepo, log)

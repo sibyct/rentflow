@@ -11,6 +11,8 @@ interface UnitDocumentWire {
   category: string;
   uploaded_by: string;
   uploaded_by_name: string;
+  related_lease_id?: string;
+  is_automated: boolean;
   filename: string;
   content_type: string;
   size_bytes: number;
@@ -25,6 +27,8 @@ function toUnitDocument(wire: UnitDocumentWire): UnitDocument {
     category: wire.category as UnitDocumentCategory,
     uploadedBy: wire.uploaded_by,
     uploadedByName: wire.uploaded_by_name,
+    relatedLeaseId: wire.related_lease_id ?? '',
+    isAutomated: wire.is_automated,
     filename: wire.filename,
     contentType: wire.content_type,
     sizeBytes: wire.size_bytes,
@@ -36,9 +40,14 @@ export const unitDocumentsApi = {
   list: (unitId: string): Promise<UnitDocument[]> =>
     apiClient.get<UnitDocumentWire[]>(`/api/v1/units/${unitId}/documents`).then((rows) => rows.map(toUnitDocument)),
 
-  add: (unitId: string, attachmentId: string, category: UnitDocumentCategory): Promise<UnitDocument> =>
+  /** relatedLeaseId is optional (R15) — links this unit-level document to a specific lease on the same unit. */
+  add: (unitId: string, attachmentId: string, category: UnitDocumentCategory, relatedLeaseId?: string): Promise<UnitDocument> =>
     apiClient
-      .post<UnitDocumentWire>(`/api/v1/units/${unitId}/documents`, { attachment_id: attachmentId, category })
+      .post<UnitDocumentWire>(`/api/v1/units/${unitId}/documents`, {
+        attachment_id: attachmentId,
+        category,
+        related_lease_id: relatedLeaseId || undefined,
+      })
       .then(toUnitDocument),
 
   delete: (unitId: string, documentId: string): Promise<void> =>

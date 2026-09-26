@@ -73,6 +73,12 @@ func (r BulkCreateUnitsRequest) ToDomain() []domain.CreateUnitInput {
 	return inputs
 }
 
+// UpdateUnitRequest has no CurrentRent field (R1) — Current Rent is
+// system-derived from the unit's active lease and must never be set
+// directly. CurrentRent stays on CreateUnitRequest as the vacant-unit
+// fallback (see domain.Unit.CurrentRent's doc comment), but any client
+// still sending it on an update gets a clean 400 (see
+// UnitService.UpdateUnit), not a silent no-op.
 type UpdateUnitRequest struct {
 	UnitName        *string  `json:"unit_name" validate:"omitempty,min=1,max=100,noctrl"`
 	Floor           *string  `json:"floor" validate:"omitempty,max=50,noctrl"`

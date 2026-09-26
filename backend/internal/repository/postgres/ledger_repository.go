@@ -699,15 +699,29 @@ func (r *LedgerRepository) ListRentRoll(ctx context.Context, opts domain.RentRol
 	return out, total, nil
 }
 
+// leaseEffectiveRentAsOf is the rent that was actually in effect for a
+// given billed period — the latest lease_rent_history row whose
+// effective_date had arrived by the period's own end date, not
+// whatever the lease's rent happens to be today (see R5: a rent
+// change must never retroactively alter an already-generated period's
+// billing). Keyed to $3 (the period's last-of-month), same COALESCE
+// technique as leaseColumnsForRead, just date-scoped to the period
+// instead of CURRENT_DATE.
+const leaseEffectiveRentAsOf = `
+	COALESCE(
+		(SELECT h.amount FROM lease_rent_history h WHERE h.lease_id = l.id AND h.effective_date <= $3 ORDER BY h.effective_date DESC, h.created_at DESC LIMIT 1),
+		l.monthly_rent
+	)`
+
 func (r *LedgerRepository) ListLeasesToBill(ctx context.Context, ownerID uuid.UUID, period time.Time) ([]*domain.LeaseBillingInfo, error) {
 	first := domain.FirstOfMonth(period)
 	last := domain.LastOfMonth(period)
 	rows, err := r.pool.Query(ctx, `
-		SELECT l.id, p.owner_id, p.id, u.id, ROUND(l.monthly_rent * 100)::bigint, l.rent_due_day
+		SELECT l.id, p.owner_id, p.id, u.id, ROUND(`+leaseEffectiveRentAsOf+` * 100)::bigint, l.rent_due_day
 		FROM leases l
 		JOIN units u ON u.id = l.unit_id
 		JOIN properties p ON p.id = u.property_id
-		WHERE p.owner_id = $1 AND l.status = 'active' AND l.monthly_rent > 0
+		WHERE p.owner_id = $1 AND l.status = 'active' AND `+leaseEffectiveRentAsOf+` > 0
 		  AND l.start_date <= $3 AND (l.end_date IS NULL OR l.end_date >= $2)`,
 		ownerID, first, last)
 	if err != nil {

@@ -1,8 +1,12 @@
 import { apiClient } from '@/api/client';
 import type {
   DepositStatus,
+  LeaseAuditEntry,
   LeaseDetailWithUnitProperty,
   LeaseDisplayStatus,
+  LeaseDocument,
+  LeaseDocumentCategory,
+  LeaseRentHistoryEntry,
   LeaseRowWithUnitProperty,
   LeaseStatus,
   LeaseType,
@@ -36,8 +40,13 @@ interface LeaseWire {
   co_residents: string[];
   emergency_contact?: string;
   renewal_status: string;
+  proposed_rent?: number | null;
+  proposed_end_date?: string;
+  offer_sent_date?: string;
   termination_reason?: string;
   termination_notice_date?: string;
+  renewed_into_lease_id?: string;
+  renewed_from_lease_id?: string;
   signed: boolean;
   signed_date?: string;
   notes?: string;
@@ -77,8 +86,13 @@ function toLeaseDetail(wire: LeaseWire): LeaseDetailWithUnitProperty {
     coResidents: wire.co_residents,
     emergencyContact: wire.emergency_contact ?? '',
     renewalStatus: wire.renewal_status as RenewalStatus,
+    proposedRent: wire.proposed_rent ?? null,
+    proposedEndDate: wire.proposed_end_date ?? '',
+    offerSentDate: wire.offer_sent_date ?? '',
     terminationReason: (wire.termination_reason as TerminationReason) ?? '',
     terminationNoticeDate: wire.termination_notice_date ?? '',
+    renewedIntoLeaseId: wire.renewed_into_lease_id ?? '',
+    renewedFromLeaseId: wire.renewed_from_lease_id ?? '',
     signed: wire.signed,
     signedDate: wire.signed_date ?? '',
     notes: wire.notes ?? '',
@@ -115,6 +129,9 @@ export function toFormValues(detail: LeaseDetailWithUnitProperty): LeaseFormValu
     coResidents: detail.coResidents.join(', '),
     emergencyContact: detail.emergencyContact,
     renewalStatus: detail.renewalStatus,
+    proposedRent: detail.proposedRent != null ? String(detail.proposedRent) : '',
+    proposedEndDate: detail.proposedEndDate,
+    offerSentDate: detail.offerSentDate,
     terminationReason: detail.terminationReason,
     terminationNoticeDate: detail.terminationNoticeDate,
     signed: detail.signed,
@@ -157,15 +174,28 @@ function toCreateLeaseRequest(values: LeaseFormValues) {
   };
 }
 
-// The update endpoint additionally accepts renewal_status/
+// The update endpoint additionally accepts renewal_status/proposed_*/
 // termination_reason/termination_notice_date/signed/signed_date —
 // fields that only make sense once a lease already exists (you don't
 // terminate a lease you're still creating), so they're absent from
 // toCreateLeaseRequest above.
-function toUpdateLeaseRequest(values: LeaseFormValues) {
+//
+// monthly_rent is only ever included while the lease is still a draft
+// (originalStatus, the status the lease had *before* this edit, not
+// whatever the form's Status field currently holds) — once a lease has
+// gone active, the backend rejects a direct monthly_rent edit outright
+// (R3); a rent change on an active lease only ever goes through
+// changeRent below. See LeaseFormDialog's monthlyRent field, which is
+// disabled for exactly this reason once active.
+function toUpdateLeaseRequest(values: LeaseFormValues, originalStatus: LeaseStatus) {
+  const { monthly_rent, ...rest } = toCreateLeaseRequest(values);
   return {
-    ...toCreateLeaseRequest(values),
+    ...rest,
+    monthly_rent: originalStatus === 'draft' ? monthly_rent : undefined,
     renewal_status: values.renewalStatus,
+    proposed_rent: parseNumber(values.proposedRent),
+    proposed_end_date: values.proposedEndDate || undefined,
+    offer_sent_date: values.offerSentDate || undefined,
     termination_reason: values.terminationReason || undefined,
     termination_notice_date: values.terminationNoticeDate || undefined,
     signed: values.signed,
@@ -210,6 +240,112 @@ function buildPortfolioListQuery(params: LeasePortfolioListParams): string {
   return q.toString();
 }
 
+// Wire shapes for the R1-R20 lease-lifecycle endpoints — each stays
+// private to this file, same rationale as LeaseWire above.
+interface LeaseRentHistoryWire {
+  id: string;
+  lease_id: string;
+  amount: number;
+  effective_date: string;
+  reason?: string;
+  is_correction: boolean;
+  created_by: string;
+  created_at: string;
+}
+
+function toLeaseRentHistoryEntry(wire: LeaseRentHistoryWire): LeaseRentHistoryEntry {
+  return {
+    id: wire.id,
+    leaseId: wire.lease_id,
+    amount: wire.amount,
+    effectiveDate: wire.effective_date,
+    reason: wire.reason ?? '',
+    isCorrection: wire.is_correction,
+    createdBy: wire.created_by,
+    createdAt: wire.created_at,
+  };
+}
+
+interface LeaseAuditEntryWire {
+  id: string;
+  lease_id: string;
+  action: string;
+  actor_id: string;
+  changes: Record<string, { old: unknown; new: unknown }>;
+  created_at: string;
+}
+
+function toLeaseAuditEntry(wire: LeaseAuditEntryWire): LeaseAuditEntry {
+  return {
+    id: wire.id,
+    leaseId: wire.lease_id,
+    action: wire.action,
+    actorId: wire.actor_id,
+    changes: wire.changes,
+    createdAt: wire.created_at,
+  };
+}
+
+interface LeaseDocumentWire {
+  id: string;
+  lease_id: string;
+  attachment_id: string;
+  category: string;
+  uploaded_by: string;
+  uploaded_by_name: string;
+  is_automated: boolean;
+  filename: string;
+  content_type: string;
+  size_bytes: number;
+  created_at: string;
+}
+
+function toLeaseDocument(wire: LeaseDocumentWire): LeaseDocument {
+  return {
+    id: wire.id,
+    leaseId: wire.lease_id,
+    attachmentId: wire.attachment_id,
+    category: wire.category as LeaseDocumentCategory,
+    uploadedBy: wire.uploaded_by,
+    uploadedByName: wire.uploaded_by_name,
+    isAutomated: wire.is_automated,
+    filename: wire.filename,
+    contentType: wire.content_type,
+    sizeBytes: wire.size_bytes,
+    createdAt: wire.created_at,
+  };
+}
+
+export interface ChangeRentInput {
+  amount: string;
+  effectiveDate: string;
+  reason: string;
+  isCorrection: boolean;
+}
+
+export interface GenerateRenewalInput {
+  startDate: string;
+  endDate: string;
+  monthlyRent: string;
+  securityDeposit: string;
+  rentDueDay: string;
+}
+
+export interface TerminateLeaseInput {
+  terminationReason: Exclude<TerminationReason, ''>;
+  terminationNoticeDate: string;
+  moveOutDate: string;
+  moveOutInspectionAttachmentId: string;
+}
+
+/** Backs the "Correct termination details" action — fixing a data-entry mistake in an already-terminated lease's termination record. Never a silent inline edit: `reason` is mandatory and every correction is audit-logged. */
+export interface CorrectTerminationInput {
+  terminationReason: Exclude<TerminationReason, ''>;
+  terminationNoticeDate: string;
+  moveOutDate: string;
+  reason: string;
+}
+
 export const leasesApi = {
   listForOwner: (params: LeasePortfolioListParams): Promise<LeasePortfolioListResult> =>
     apiClient
@@ -227,10 +363,72 @@ export const leasesApi = {
       .post<{ id: string }>(`/api/v1/units/${unitId}/leases`, toCreateLeaseRequest(values))
       .then((r) => leasesApi.get(r.id)),
 
-  update: (id: string, values: LeaseFormValues): Promise<LeaseDetailWithUnitProperty> =>
+  update: (id: string, values: LeaseFormValues, originalStatus: LeaseStatus): Promise<LeaseDetailWithUnitProperty> =>
     apiClient
-      .put<{ id: string }>(`/api/v1/leases/${id}`, toUpdateLeaseRequest(values))
+      .put<{ id: string }>(`/api/v1/leases/${id}`, toUpdateLeaseRequest(values, originalStatus))
       .then((r) => leasesApi.get(r.id)),
 
   delete: (id: string): Promise<void> => apiClient.delete<void>(`/api/v1/leases/${id}`),
+
+  rentHistory: (id: string): Promise<LeaseRentHistoryEntry[]> =>
+    apiClient.get<LeaseRentHistoryWire[]>(`/api/v1/leases/${id}/rent-history`).then((rows) => rows.map(toLeaseRentHistoryEntry)),
+
+  /** The only way to change an active lease's effective rent — always a new dated amendment, never an overwrite (R3/R4). */
+  changeRent: (id: string, input: ChangeRentInput): Promise<LeaseDetailWithUnitProperty> =>
+    apiClient
+      .post<{ id: string }>(`/api/v1/leases/${id}/rent-changes`, {
+        amount: input.amount,
+        effective_date: input.effectiveDate,
+        reason: input.reason || undefined,
+        is_correction: input.isCorrection,
+      })
+      .then((r) => leasesApi.get(r.id)),
+
+  /** Turns an Accepted renewal into a new, real Lease record (R7) — the source lease's own record is retired, never rewritten. */
+  generateRenewal: (id: string, input: GenerateRenewalInput): Promise<LeaseDetailWithUnitProperty> =>
+    apiClient
+      .post<{ id: string }>(`/api/v1/leases/${id}/renewal-generate`, {
+        start_date: input.startDate,
+        end_date: input.endDate || undefined,
+        monthly_rent: parseNumber(input.monthlyRent),
+        security_deposit: parseNumber(input.securityDeposit),
+        rent_due_day: parseNumber(input.rentDueDay),
+      })
+      .then((r) => leasesApi.get(r.id)),
+
+  /** The dedicated action for ending a lease — always sets the unit Vacant (R10), never a generic status edit. */
+  terminate: (id: string, input: TerminateLeaseInput): Promise<LeaseDetailWithUnitProperty> =>
+    apiClient
+      .post<{ id: string }>(`/api/v1/leases/${id}/terminate`, {
+        termination_reason: input.terminationReason,
+        termination_notice_date: input.terminationNoticeDate,
+        move_out_date: input.moveOutDate || undefined,
+        move_out_inspection_attachment_id: input.moveOutInspectionAttachmentId || undefined,
+      })
+      .then((r) => leasesApi.get(r.id)),
+
+  /** Fixes a mistake in an already-terminated lease's termination details — a separate action from terminate, requiring a reason and captured in the audit log; never a silent inline edit. */
+  correctTermination: (id: string, input: CorrectTerminationInput): Promise<LeaseDetailWithUnitProperty> =>
+    apiClient
+      .post<{ id: string }>(`/api/v1/leases/${id}/termination-correction`, {
+        termination_reason: input.terminationReason,
+        termination_notice_date: input.terminationNoticeDate,
+        move_out_date: input.moveOutDate || undefined,
+        reason: input.reason,
+      })
+      .then((r) => leasesApi.get(r.id)),
+
+  audit: (id: string): Promise<LeaseAuditEntry[]> =>
+    apiClient.get<LeaseAuditEntryWire[]>(`/api/v1/leases/${id}/audit`).then((rows) => rows.map(toLeaseAuditEntry)),
+
+  documents: (id: string): Promise<LeaseDocument[]> =>
+    apiClient.get<LeaseDocumentWire[]>(`/api/v1/leases/${id}/documents`).then((rows) => rows.map(toLeaseDocument)),
+
+  addDocument: (id: string, attachmentId: string, category: LeaseDocumentCategory): Promise<LeaseDocument> =>
+    apiClient
+      .post<LeaseDocumentWire>(`/api/v1/leases/${id}/documents`, { attachment_id: attachmentId, category })
+      .then(toLeaseDocument),
+
+  deleteDocument: (id: string, documentId: string): Promise<void> =>
+    apiClient.delete<void>(`/api/v1/leases/${id}/documents/${documentId}`),
 };

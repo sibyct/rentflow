@@ -211,17 +211,23 @@ export function UnitFormDialog({ open, onClose, propertyId, properties, unitId, 
                   <Controller
                     name="bedrooms"
                     control={control}
-                    render={({ field }) => <TextField {...field} label="Bedrooms" type="number" sx={{ flex: 1 }} />}
+                    render={({ field }) => (
+                      <TextField {...field} label="Bedrooms" type="number" sx={{ flex: 1 }} error={Boolean(errors.bedrooms)} helperText={errors.bedrooms?.message} />
+                    )}
                   />
                   <Controller
                     name="bathrooms"
                     control={control}
-                    render={({ field }) => <TextField {...field} label="Bathrooms" type="number" sx={{ flex: 1 }} />}
+                    render={({ field }) => (
+                      <TextField {...field} label="Bathrooms" type="number" sx={{ flex: 1 }} error={Boolean(errors.bathrooms)} helperText={errors.bathrooms?.message} />
+                    )}
                   />
                   <Controller
                     name="sqft"
                     control={control}
-                    render={({ field }) => <TextField {...field} label="Sq ft" type="number" sx={{ flex: 1 }} />}
+                    render={({ field }) => (
+                      <TextField {...field} label="Sq ft" type="number" sx={{ flex: 1 }} error={Boolean(errors.sqft)} helperText={errors.sqft?.message} />
+                    )}
                   />
                 </Stack>
                 <Controller
@@ -303,28 +309,59 @@ export function UnitFormDialog({ open, onClose, propertyId, properties, unitId, 
               </FormSection>
 
               <FormSection title="Rent">
+                {/* Current Rent has no field here — it's system-derived
+                    from the unit's active lease (see the read-only
+                    display on the Overview tab) and must never be
+                    directly editable as a standalone field (R1). Market
+                    Rent, the asking price, stays independently editable
+                    (R2). */}
                 <Stack direction="row" spacing={2}>
                   <Controller
                     name="marketRent"
                     control={control}
-                    render={({ field }) => <TextField {...field} label="Market rent" type="number" sx={{ flex: 1 }} slotProps={{ input: { startAdornment: '$' } }} />}
-                  />
-                  <Controller
-                    name="currentRent"
-                    control={control}
-                    render={({ field }) => <TextField {...field} label="Current rent" type="number" sx={{ flex: 1 }} slotProps={{ input: { startAdornment: '$' } }} />}
+                    render={({ field }) => (
+                      <TextField
+                        {...field}
+                        label="Market rent"
+                        type="number"
+                        sx={{ flex: 1 }}
+                        slotProps={{ input: { startAdornment: '$' } }}
+                        error={Boolean(errors.marketRent)}
+                        helperText={errors.marketRent?.message}
+                      />
+                    )}
                   />
                 </Stack>
                 <Stack direction="row" spacing={2}>
                   <Controller
                     name="securityDeposit"
                     control={control}
-                    render={({ field }) => <TextField {...field} label="Security deposit" type="number" sx={{ flex: 1 }} slotProps={{ input: { startAdornment: '$' } }} />}
+                    render={({ field }) => (
+                      <TextField
+                        {...field}
+                        label="Security deposit"
+                        type="number"
+                        sx={{ flex: 1 }}
+                        slotProps={{ input: { startAdornment: '$' } }}
+                        error={Boolean(errors.securityDeposit)}
+                        helperText={errors.securityDeposit?.message}
+                      />
+                    )}
                   />
                   <Controller
                     name="rentDueDay"
                     control={control}
-                    render={({ field }) => <TextField {...field} label="Rent due day" type="number" sx={{ flex: 1 }} placeholder="1–31" />}
+                    render={({ field }) => (
+                      <TextField
+                        {...field}
+                        label="Rent due day"
+                        type="number"
+                        sx={{ flex: 1 }}
+                        placeholder="1–31"
+                        error={Boolean(errors.rentDueDay)}
+                        helperText={errors.rentDueDay?.message}
+                      />
+                    )}
                   />
                 </Stack>
               </FormSection>

@@ -120,7 +120,7 @@ func (f *fakeUnitService) ListDocuments(_ context.Context, _, _ uuid.UUID, _ dom
 	return nil, domain.ErrNotFound
 }
 
-func (f *fakeUnitService) AddDocument(_ context.Context, _, _, _, _ uuid.UUID, _ domain.UnitDocumentCategory, _ domain.PropertyAccess) (*domain.UnitDocument, error) {
+func (f *fakeUnitService) AddDocument(_ context.Context, _, _, _, _ uuid.UUID, _ domain.UnitDocumentCategory, _ *uuid.UUID, _ domain.PropertyAccess) (*domain.UnitDocument, error) {
 	return nil, domain.ErrNotFound
 }
 
