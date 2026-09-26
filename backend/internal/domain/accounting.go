@@ -381,6 +381,7 @@ const (
 type RentRollOptions struct {
 	OwnerID    uuid.UUID
 	PropertyID *uuid.UUID
+	LeaseID    *uuid.UUID
 	Status     *PaymentStatus
 	PeriodFrom time.Time // first of month, inclusive
 	PeriodTo   time.Time // first of month, inclusive

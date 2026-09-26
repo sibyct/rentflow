@@ -25,7 +25,9 @@ import { RentRollTable, type RentRollEmptyState } from './RentRollTable';
 export function RentRollScreen() {
   const [searchParams] = useSearchParams();
 
-  const [propertyFilter, setPropertyFilter] = useState('');
+  // Seeded once from ?property=<id> — a property detail page's "View in
+  // Rent Roll" link lands here with, same pattern as UnitsScreen.
+  const [propertyFilter, setPropertyFilter] = useState(searchParams.get('property') ?? '');
   // Seeded once from ?status=late — the accounting dashboard's Outstanding card links here.
   const [statusFilter, setStatusFilter] = useState<PaymentStatus | ''>(
     (searchParams.get('status') as PaymentStatus | null) ?? '',

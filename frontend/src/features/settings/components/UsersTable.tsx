@@ -16,6 +16,7 @@ import Typography from '@mui/material/Typography';
 import MoreVertOutlined from '@mui/icons-material/MoreVertOutlined';
 import EditOutlined from '@mui/icons-material/EditOutlined';
 import MailOutlined from '@mui/icons-material/MailOutlined';
+import LockResetOutlined from '@mui/icons-material/LockResetOutlined';
 import BlockOutlined from '@mui/icons-material/BlockOutlined';
 import ReplayOutlined from '@mui/icons-material/ReplayOutlined';
 import PersonSearchOutlined from '@mui/icons-material/PersonSearchOutlined';
@@ -30,12 +31,13 @@ interface UsersTableProps {
   totalUnfiltered: number;
   onOpenEdit: (user: StaffUser) => void;
   onResendInvite: (user: StaffUser) => void;
+  onResetPassword: (user: StaffUser) => void;
   onDeactivate: (user: StaffUser) => void;
   onReactivate: (user: StaffUser) => void;
   isLastActiveAdmin: (userId: string) => boolean;
 }
 
-export function UsersTable({ users, totalUnfiltered, onOpenEdit, onResendInvite, onDeactivate, onReactivate, isLastActiveAdmin }: UsersTableProps) {
+export function UsersTable({ users, totalUnfiltered, onOpenEdit, onResendInvite, onResetPassword, onDeactivate, onReactivate, isLastActiveAdmin }: UsersTableProps) {
   const [menu, setMenu] = useState<{ user: StaffUser; anchor: HTMLElement } | null>(null);
 
   const closeMenu = () => setMenu(null);
@@ -156,7 +158,7 @@ export function UsersTable({ users, totalUnfiltered, onOpenEdit, onResendInvite,
             Edit
           </MenuItem>,
 
-          (menu.user.status === 'invited' || menu.user.status === 'invite_expired') && (
+          (menu.user.status === 'invited' || menu.user.status === 'invite_expired') && !menu.user.isAccountOwner && (
             <MenuItem
               key="resend"
               onClick={() => {
@@ -169,7 +171,20 @@ export function UsersTable({ users, totalUnfiltered, onOpenEdit, onResendInvite,
             </MenuItem>
           ),
 
-          menu.user.status === 'active' && (
+          menu.user.status === 'active' && !menu.user.isAccountOwner && (
+            <MenuItem
+              key="reset-password"
+              onClick={() => {
+                onResetPassword(menu.user);
+                closeMenu();
+              }}
+            >
+              <LockResetOutlined fontSize="small" sx={{ mr: 1.25, color: tokens.slate[500] }} />
+              Reset password
+            </MenuItem>
+          ),
+
+          menu.user.status === 'active' && !menu.user.isAccountOwner && (
             <Tooltip key="deactivate" title={isLastActiveAdmin(menu.user.id) ? "This is the account's only active Admin." : ''} placement="left">
               <span>
                 <MenuItem
@@ -187,7 +202,7 @@ export function UsersTable({ users, totalUnfiltered, onOpenEdit, onResendInvite,
             </Tooltip>
           ),
 
-          menu.user.status === 'deactivated' && (
+          menu.user.status === 'deactivated' && !menu.user.isAccountOwner && (
             <MenuItem
               key="reactivate"
               onClick={() => {

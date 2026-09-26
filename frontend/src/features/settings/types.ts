@@ -1,11 +1,8 @@
 import type { StatusTone } from '@/shared/components';
 
-// This whole feature is a front-end prototype: RentFlow's backend has no
-// staff/roles concept yet (an account is exactly one user — see
-// backend/internal/domain/user.go). Everything here lives in the
-// in-memory useUsersRolesStore and resets on reload; nothing is
-// persisted or sent to the API. Kept in its own feature folder so it's
-// obvious where the real thing would slot in once a backend exists.
+// Backed by the real staff-accounts API (backend/internal/domain/staff.go,
+// service/staff_service.go, transport/http/handlers/staff_handler.go) —
+// see api/staffApi.ts for the wire mapping.
 
 export type StaffRole = 'admin' | 'property_manager' | 'maintenance_coordinator' | 'accountant';
 
@@ -41,24 +38,15 @@ export const USER_STATUS_TONE: Record<UserStatus, StatusTone> = {
   deactivated: 'default',
 };
 
-/** The portfolio a property-access checklist picks from — mirrors the shape of a real property list without depending on the properties feature. */
-export const MOCK_PROPERTIES = [
-  'Willow Creek Apartments',
-  'Oak Terrace',
-  'Harbor View',
-  'Cedar Point',
-  'Riverside Commons',
-  'Maple Grove',
-];
-
 export interface PropertyAccess {
   all: boolean;
-  /** Only meaningful when `all` is false. */
-  properties: string[];
+  /** Only meaningful when `all` is false — both arrays are the same order/length. */
+  propertyIds: string[];
+  propertyNames: string[];
 }
 
 export function allPropertyAccess(): PropertyAccess {
-  return { all: true, properties: [] };
+  return { all: true, propertyIds: [], propertyNames: [] };
 }
 
 export interface StaffUser {
@@ -72,35 +60,35 @@ export interface StaffUser {
   lastLoginAt: string | null;
   /** Set only while status is 'invited' or 'invite_expired'. */
   inviteExpiresAt: string | null;
-  /** True only for the signed-in demo account ("You" tag) — cosmetic, not a permission. */
-  isCurrentUser?: boolean;
+  /** True only for the signed-in user's own row ("You" tag) — cosmetic, not a permission. */
+  isCurrentUser: boolean;
+  /** The account's root owner — can't be edited, deactivated or reassigned through this API (see StaffService.requireManageableStaff). */
+  isAccountOwner: boolean;
 }
 
-export type AuditEventKind =
-  | 'invite_sent'
-  | 'invite_resent'
-  | 'role_changed'
-  | 'property_access_changed'
-  | 'deactivated'
-  | 'reactivated';
+export type AuditEventKind = 'invite_sent' | 'invite_resent' | 'invite_accepted' | 'role_or_access_changed' | 'deactivated' | 'reactivated';
 
 export const AUDIT_EVENT_LABELS: Record<AuditEventKind, string> = {
   invite_sent: 'Invite sent',
   invite_resent: 'Invite resent',
-  role_changed: 'Role changed',
-  property_access_changed: 'Property access changed',
+  invite_accepted: 'Invite accepted',
+  role_or_access_changed: 'Role or access changed',
   deactivated: 'Deactivated',
   reactivated: 'Reactivated',
 };
+
+export interface AuditFieldChange {
+  old: string;
+  new: string;
+}
 
 export interface AuditEntry {
   id: string;
   when: string; // ISO timestamp
   event: AuditEventKind;
   subjectName: string;
-  /** Human-readable before/after, e.g. role names or "2 properties" → "3 properties". Omitted for events with no before state (invite sent). */
-  from?: string;
-  to?: string;
+  /** Keyed by field name ("role", "property_access"); empty for events with no before/after (invite sent, invite accepted). */
+  changes: Record<string, AuditFieldChange>;
   changedBy: string;
 }
 

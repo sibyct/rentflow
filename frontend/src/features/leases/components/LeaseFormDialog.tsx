@@ -247,6 +247,18 @@ export function LeaseFormDialog({ open, onClose, unitId, units, leaseId, onSaved
                     />
                   )}
                 />
+                <Stack direction="row" spacing={2}>
+                  <Controller
+                    name="primaryResidentPhone"
+                    control={control}
+                    render={({ field }) => <TextField {...field} label="Phone" type="tel" fullWidth placeholder="Optional" />}
+                  />
+                  <Controller
+                    name="primaryResidentEmail"
+                    control={control}
+                    render={({ field }) => <TextField {...field} label="Email" type="email" fullWidth placeholder="Optional" />}
+                  />
+                </Stack>
                 <Controller
                   name="coResidents"
                   control={control}

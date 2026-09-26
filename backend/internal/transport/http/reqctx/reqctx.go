@@ -26,6 +26,7 @@ const (
 	traceIDKey
 	loggerKey
 	claimsKey
+	propertyAccessKey
 )
 
 func WithRequestID(ctx context.Context, id string) context.Context {
@@ -67,4 +68,13 @@ func WithClaims(ctx context.Context, claims *domain.AuthClaims) context.Context 
 func Claims(ctx context.Context) (*domain.AuthClaims, bool) {
 	claims, ok := ctx.Value(claimsKey).(*domain.AuthClaims)
 	return claims, ok
+}
+
+func WithPropertyAccess(ctx context.Context, access domain.PropertyAccess) context.Context {
+	return context.WithValue(ctx, propertyAccessKey, access)
+}
+
+func PropertyAccess(ctx context.Context) (domain.PropertyAccess, bool) {
+	access, ok := ctx.Value(propertyAccessKey).(domain.PropertyAccess)
+	return access, ok
 }

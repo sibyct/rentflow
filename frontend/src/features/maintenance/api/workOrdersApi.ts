@@ -234,6 +234,7 @@ const SORT_TO_WIRE: Record<WorkOrderSortKey, string> = {
 export interface WorkOrderListParams {
   search?: string;
   propertyId?: string;
+  unitId?: string;
   status?: WorkOrderStatus | '';
   priority?: WorkOrderPriority | '';
   category?: WorkOrderCategory | '';
@@ -256,6 +257,7 @@ function buildListQuery(params: WorkOrderListParams): string {
   const q = new URLSearchParams();
   if (params.search) q.set('search', params.search);
   if (params.propertyId) q.set('property_id', params.propertyId);
+  if (params.unitId) q.set('unit_id', params.unitId);
   if (params.status) q.set('status', params.status);
   if (params.priority) q.set('priority', params.priority);
   if (params.category) q.set('category', params.category);

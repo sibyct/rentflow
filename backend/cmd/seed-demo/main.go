@@ -101,10 +101,11 @@ func run() error {
 	statementRepo := postgres.NewOwnerStatementRepository(pool)
 	outboxRepo := postgres.NewEmailOutboxRepository(pool)
 	attachmentRepo := postgres.NewAttachmentRepository(pool)
+	unitDocumentRepo := postgres.NewUnitDocumentRepository(pool)
 
 	var cache domain.Cache
 	propertyService := service.NewPropertyService(propertyRepo, unitRepo, cache, log)
-	unitService := service.NewUnitService(unitRepo, propertyRepo, log)
+	unitService := service.NewUnitService(unitRepo, propertyRepo, unitDocumentRepo, attachmentRepo, log)
 	leaseService := service.NewLeaseService(leaseRepo, unitRepo, propertyRepo, log)
 	workOrderService := service.NewWorkOrderService(workOrderRepo, unitRepo, propertyRepo, vendorRepo, attachmentRepo, log)
 	vendorService := service.NewVendorService(vendorRepo, propertyRepo, attachmentRepo, log)
@@ -230,34 +231,34 @@ func (d *demo) build() error {
 	mapleA, err := d.units.CreateUnit(d.ctx, d.ownerID, domain.CreateUnitInput{
 		PropertyID: maple.ID, UnitName: "Unit A", Type: domain.UnitTypeTwoBed, Bedrooms: ptr(2), Bathrooms: ptr(1.0),
 		Sqft: ptr(950), Status: domain.UnitStatusOccupied, MarketRent: ptr(1900.0), CurrentRent: ptr(1850.0), RentDueDay: ptr(1),
-	})
+	}, domain.AllPropertyAccess())
 	d.must("unit: Maple St / Unit A", err)
 	mapleB, err := d.units.CreateUnit(d.ctx, d.ownerID, domain.CreateUnitInput{
 		PropertyID: maple.ID, UnitName: "Unit B", Type: domain.UnitTypeTwoBed, Bedrooms: ptr(2), Bathrooms: ptr(1.0),
 		Sqft: ptr(975), Status: domain.UnitStatusOccupied, MarketRent: ptr(1950.0), CurrentRent: ptr(1900.0), RentDueDay: ptr(1),
-	})
+	}, domain.AllPropertyAccess())
 	d.must("unit: Maple St / Unit B", err)
 
 	riversideMain, err := d.units.CreateUnit(d.ctx, d.ownerID, domain.CreateUnitInput{
 		PropertyID: riverside.ID, UnitName: "Main House", Type: domain.UnitTypeThreeBedPlus, Bedrooms: ptr(3), Bathrooms: ptr(2.0),
 		Sqft: ptr(1650), Status: domain.UnitStatusOccupied, MarketRent: ptr(2500.0), CurrentRent: ptr(2400.0), RentDueDay: ptr(5),
-	})
+	}, domain.AllPropertyAccess())
 	d.must("unit: Riverside Bungalow / Main House", err)
 
 	oak101, err := d.units.CreateUnit(d.ctx, d.ownerID, domain.CreateUnitInput{
 		PropertyID: oakview.ID, UnitName: "Unit 101", Type: domain.UnitTypeOneBed, Bedrooms: ptr(1), Bathrooms: ptr(1.0),
 		Sqft: ptr(700), Status: domain.UnitStatusOccupied, MarketRent: ptr(1250.0), CurrentRent: ptr(1200.0), RentDueDay: ptr(1),
-	})
+	}, domain.AllPropertyAccess())
 	d.must("unit: Oakview / Unit 101", err)
 	oak102, err := d.units.CreateUnit(d.ctx, d.ownerID, domain.CreateUnitInput{
 		PropertyID: oakview.ID, UnitName: "Unit 102", Type: domain.UnitTypeOneBed, Bedrooms: ptr(1), Bathrooms: ptr(1.0),
 		Sqft: ptr(700), Status: domain.UnitStatusVacant, MarketRent: ptr(1250.0),
-	})
+	}, domain.AllPropertyAccess())
 	d.must("unit: Oakview / Unit 102 (vacant)", err)
 	oak103, err := d.units.CreateUnit(d.ctx, d.ownerID, domain.CreateUnitInput{
 		PropertyID: oakview.ID, UnitName: "Unit 103", Type: domain.UnitTypeTwoBed, Bedrooms: ptr(2), Bathrooms: ptr(2.0),
 		Sqft: ptr(1050), Status: domain.UnitStatusOccupied, MarketRent: ptr(2150.0), CurrentRent: ptr(2100.0), RentDueDay: ptr(1),
-	})
+	}, domain.AllPropertyAccess())
 	d.must("unit: Oakview / Unit 103", err)
 	_ = oak102
 
@@ -287,30 +288,30 @@ func (d *demo) build() error {
 	leaseA, err := d.leases.CreateLease(d.ctx, d.ownerID, domain.CreateLeaseInput{
 		UnitID: mapleA.ID, Type: domain.LeaseTypeMonthToMonth, StartDate: daysAgo(320), MonthlyRent: 1850,
 		SecurityDeposit: ptr(1850.0), RentDueDay: ptr(1), PrimaryResidentName: "Sarah Chen", EmergencyContact: "Mia Chen · 512-555-0301",
-	})
+	}, domain.AllPropertyAccess())
 	d.must("lease: Maple St / Unit A — Sarah Chen", err)
 	leaseB, err := d.leases.CreateLease(d.ctx, d.ownerID, domain.CreateLeaseInput{
 		UnitID: mapleB.ID, Type: domain.LeaseTypeFixed, StartDate: daysAgo(230), EndDate: ptr(daysFrom(120)), MonthlyRent: 1900,
 		SecurityDeposit: ptr(1900.0), RentDueDay: ptr(1), LateFeeAmount: ptr(75.0), LateFeeGraceDays: ptr(3),
 		PrimaryResidentName: "David Okafor", EmergencyContact: "Grace Okafor · 512-555-0322",
-	})
+	}, domain.AllPropertyAccess())
 	d.must("lease: Maple St / Unit B — David Okafor (flat $75 late fee override)", err)
 	leaseRiverside, err := d.leases.CreateLease(d.ctx, d.ownerID, domain.CreateLeaseInput{
 		UnitID: riversideMain.ID, Type: domain.LeaseTypeFixed, StartDate: daysAgo(480), EndDate: ptr(daysFrom(23)), MonthlyRent: 2400,
 		SecurityDeposit: ptr(2400.0), RentDueDay: ptr(5), PrimaryResidentName: "The Martinez Family",
 		EmergencyContact: "Elena Martinez · 512-555-0455", Notes: "Lease expiring soon — renewal conversation pending.",
-	})
+	}, domain.AllPropertyAccess())
 	d.must("lease: Riverside Bungalow — The Martinez Family (expiring soon)", err)
 	lease101, err := d.leases.CreateLease(d.ctx, d.ownerID, domain.CreateLeaseInput{
 		UnitID: oak101.ID, Type: domain.LeaseTypeMonthToMonth, StartDate: daysAgo(250), MonthlyRent: 1200,
 		SecurityDeposit: ptr(1200.0), RentDueDay: ptr(1), PrimaryResidentName: "Priya Patel",
-	})
+	}, domain.AllPropertyAccess())
 	d.must("lease: Oakview / Unit 101 — Priya Patel", err)
 	lease103, err := d.leases.CreateLease(d.ctx, d.ownerID, domain.CreateLeaseInput{
 		UnitID: oak103.ID, Type: domain.LeaseTypeFixed, StartDate: daysAgo(400), EndDate: ptr(daysFrom(330)), MonthlyRent: 2100,
 		SecurityDeposit: ptr(2100.0), RentDueDay: ptr(1), PrimaryResidentName: "Tom & Lisa Nguyen",
 		CoResidents: []string{"Lisa Nguyen"},
-	})
+	}, domain.AllPropertyAccess())
 	d.must("lease: Oakview / Unit 103 — Tom & Lisa Nguyen", err)
 
 	fmt.Println("setting the account's late-fee rule...")
@@ -424,18 +425,18 @@ func (d *demo) build() error {
 		PropertyID: maple.ID, UnitID: &mapleA.ID, Title: "Leaking kitchen faucet", Category: domain.WorkOrderCategoryPlumbing,
 		Priority: domain.WorkOrderPriorityMedium, Status: domain.WorkOrderStatusNew, ReportedBy: "Sarah Chen",
 		VendorID: &plumbing.ID,
-	})
+	}, domain.AllPropertyAccess())
 	d.must("work order: Maple A — leaking kitchen faucet", err)
 	_, err = d.workOrders.UpdateWorkOrder(d.ctx, woFaucet.ID, d.ownerID, domain.UpdateWorkOrderInput{
 		Status: ptr(domain.WorkOrderStatusCompleted), ActualCost: ptr(145.00),
-	})
+	}, domain.AllPropertyAccess())
 	d.must("  → completed, $145.00 (auto-expense created)", err)
 
 	woBreaker, err := d.workOrders.CreateWorkOrder(d.ctx, d.ownerID, domain.CreateWorkOrderInput{
 		PropertyID: maple.ID, UnitID: &mapleB.ID, Title: "Circuit breaker keeps tripping", Category: domain.WorkOrderCategoryElectrical,
 		Priority: domain.WorkOrderPriorityHigh, Status: domain.WorkOrderStatusInProgress, ReportedBy: "David Okafor",
 		VendorID: &electric.ID, DueDate: ptr(daysFrom(3)),
-	})
+	}, domain.AllPropertyAccess())
 	d.must("work order: Maple B — circuit breaker tripping (in progress)", err)
 	_ = woBreaker
 
@@ -443,31 +444,31 @@ func (d *demo) build() error {
 		PropertyID: riverside.ID, UnitID: &riversideMain.ID, Title: "AC not cooling", Category: domain.WorkOrderCategoryHVAC,
 		Priority: domain.WorkOrderPriorityEmergency, Status: domain.WorkOrderStatusAssigned, ReportedBy: "The Martinez Family",
 		AssignedTo: "Cool Air HVAC (not a tracked vendor)", DueDate: ptr(daysFrom(1)),
-	})
+	}, domain.AllPropertyAccess())
 	d.must("work order: Riverside — AC not cooling (emergency)", err)
 
 	_, err = d.workOrders.CreateWorkOrder(d.ctx, d.ownerID, domain.CreateWorkOrderInput{
 		PropertyID: oakview.ID, UnitID: &oak101.ID, Title: "Squeaky door hinge", Category: domain.WorkOrderCategoryGeneral,
 		Priority: domain.WorkOrderPriorityLow, Status: domain.WorkOrderStatusNew, ReportedBy: "Priya Patel",
-	})
+	}, domain.AllPropertyAccess())
 	d.must("work order: Oakview 101 — squeaky door hinge", err)
 
 	woDishwasher, err := d.workOrders.CreateWorkOrder(d.ctx, d.ownerID, domain.CreateWorkOrderInput{
 		PropertyID: oakview.ID, UnitID: &oak103.ID, Title: "Dishwasher not draining", Category: domain.WorkOrderCategoryAppliance,
 		Priority: domain.WorkOrderPriorityMedium, Status: domain.WorkOrderStatusNew, ReportedBy: "Tom Nguyen",
 		AssignedTo: "Ace Appliance Repair",
-	})
+	}, domain.AllPropertyAccess())
 	d.must("work order: Oakview 103 — dishwasher not draining", err)
 	_, err = d.workOrders.UpdateWorkOrder(d.ctx, woDishwasher.ID, d.ownerID, domain.UpdateWorkOrderInput{
 		Status: ptr(domain.WorkOrderStatusCompleted), ActualCost: ptr(210.00),
-	})
+	}, domain.AllPropertyAccess())
 	d.must("  → completed, $210.00 (auto-expense created)", err)
 
 	_, err = d.workOrders.CreateWorkOrder(d.ctx, d.ownerID, domain.CreateWorkOrderInput{
 		PropertyID: oakview.ID, Title: "Quarterly landscaping service", Category: domain.WorkOrderCategoryGeneral,
 		Priority: domain.WorkOrderPriorityLow, Status: domain.WorkOrderStatusNew, ReportedBy: "Property Manager",
 		AssignedTo: "GreenScape Landscaping", DueDate: ptr(daysFrom(15)),
-	})
+	}, domain.AllPropertyAccess())
 	d.must("work order: Oakview (property-wide) — quarterly landscaping", err)
 
 	fmt.Println("settling security deposits (one per lease was created automatically)...")

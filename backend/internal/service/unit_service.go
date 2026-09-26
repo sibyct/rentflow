@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
 	"time"
 
 	"github.com/google/uuid"
@@ -17,19 +18,21 @@ import (
 // property and comparing its OwnerID — the same IDOR-safe pattern
 // PropertyService uses, just one hop further.
 type UnitService struct {
-	repo         domain.UnitRepository
-	propertyRepo domain.PropertyRepository
-	log          *slog.Logger
+	repo           domain.UnitRepository
+	propertyRepo   domain.PropertyRepository
+	documentRepo   domain.UnitDocumentRepository
+	attachmentRepo domain.AttachmentRepository
+	log            *slog.Logger
 }
 
-func NewUnitService(repo domain.UnitRepository, propertyRepo domain.PropertyRepository, log *slog.Logger) *UnitService {
-	return &UnitService{repo: repo, propertyRepo: propertyRepo, log: log}
+func NewUnitService(repo domain.UnitRepository, propertyRepo domain.PropertyRepository, documentRepo domain.UnitDocumentRepository, attachmentRepo domain.AttachmentRepository, log *slog.Logger) *UnitService {
+	return &UnitService{repo: repo, propertyRepo: propertyRepo, documentRepo: documentRepo, attachmentRepo: attachmentRepo, log: log}
 }
 
 var _ domain.UnitService = (*UnitService)(nil)
 
-func (s *UnitService) CreateUnit(ctx context.Context, ownerID uuid.UUID, input domain.CreateUnitInput) (*domain.Unit, error) {
-	if _, err := s.requireOwnedProperty(ctx, input.PropertyID, ownerID); err != nil {
+func (s *UnitService) CreateUnit(ctx context.Context, ownerID uuid.UUID, input domain.CreateUnitInput, access domain.PropertyAccess) (*domain.Unit, error) {
+	if _, err := s.requireOwnedProperty(ctx, input.PropertyID, ownerID, access); err != nil {
 		return nil, fmt.Errorf("create unit: %w", err)
 	}
 
@@ -57,14 +60,14 @@ func (s *UnitService) CreateUnit(ctx context.Context, ownerID uuid.UUID, input d
 	return u, nil
 }
 
-func (s *UnitService) CreateUnitsBulk(ctx context.Context, ownerID, propertyID uuid.UUID, inputs []domain.CreateUnitInput) ([]*domain.Unit, error) {
+func (s *UnitService) CreateUnitsBulk(ctx context.Context, ownerID, propertyID uuid.UUID, inputs []domain.CreateUnitInput, access domain.PropertyAccess) ([]*domain.Unit, error) {
 	if len(inputs) == 0 {
 		return nil, fmt.Errorf("bulk create units: %w", domain.ValidationErrors{
 			{Field: "units", Message: "must include at least one unit"},
 		})
 	}
 
-	if _, err := s.requireOwnedProperty(ctx, propertyID, ownerID); err != nil {
+	if _, err := s.requireOwnedProperty(ctx, propertyID, ownerID, access); err != nil {
 		return nil, fmt.Errorf("bulk create units: %w", err)
 	}
 
@@ -107,19 +110,19 @@ func (s *UnitService) CreateUnitsBulk(ctx context.Context, ownerID, propertyID u
 	return units, nil
 }
 
-func (s *UnitService) GetUnit(ctx context.Context, id, ownerID uuid.UUID) (*domain.Unit, error) {
+func (s *UnitService) GetUnit(ctx context.Context, id, ownerID uuid.UUID, access domain.PropertyAccess) (*domain.Unit, error) {
 	u, err := s.repo.GetByID(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("get unit %s: %w", id, err)
 	}
-	if _, err := s.requireOwnedProperty(ctx, u.PropertyID, ownerID); err != nil {
+	if _, err := s.requireOwnedProperty(ctx, u.PropertyID, ownerID, access); err != nil {
 		return nil, fmt.Errorf("get unit %s: %w", id, err)
 	}
 	return u, nil
 }
 
-func (s *UnitService) ListUnitsByProperty(ctx context.Context, propertyID, ownerID uuid.UUID) ([]*domain.Unit, error) {
-	if _, err := s.requireOwnedProperty(ctx, propertyID, ownerID); err != nil {
+func (s *UnitService) ListUnitsByProperty(ctx context.Context, propertyID, ownerID uuid.UUID, access domain.PropertyAccess) ([]*domain.Unit, error) {
+	if _, err := s.requireOwnedProperty(ctx, propertyID, ownerID, access); err != nil {
 		return nil, fmt.Errorf("list units for property %s: %w", propertyID, err)
 	}
 
@@ -153,12 +156,12 @@ func (s *UnitService) ListUnitsForOwner(ctx context.Context, ownerID uuid.UUID, 
 	return units, total, nil
 }
 
-func (s *UnitService) UpdateUnit(ctx context.Context, id, ownerID uuid.UUID, input domain.UpdateUnitInput) (*domain.Unit, error) {
+func (s *UnitService) UpdateUnit(ctx context.Context, id, ownerID uuid.UUID, input domain.UpdateUnitInput, access domain.PropertyAccess) (*domain.Unit, error) {
 	u, err := s.repo.GetByID(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("update unit %s: %w", id, err)
 	}
-	if _, err := s.requireOwnedProperty(ctx, u.PropertyID, ownerID); err != nil {
+	if _, err := s.requireOwnedProperty(ctx, u.PropertyID, ownerID, access); err != nil {
 		return nil, fmt.Errorf("update unit %s: %w", id, err)
 	}
 
@@ -267,12 +270,12 @@ func (s *UnitService) UpdateUnit(ctx context.Context, id, ownerID uuid.UUID, inp
 	return u, nil
 }
 
-func (s *UnitService) DeleteUnit(ctx context.Context, id, ownerID uuid.UUID) error {
+func (s *UnitService) DeleteUnit(ctx context.Context, id, ownerID uuid.UUID, access domain.PropertyAccess) error {
 	u, err := s.repo.GetByID(ctx, id)
 	if err != nil {
 		return fmt.Errorf("delete unit %s: %w", id, err)
 	}
-	if _, err := s.requireOwnedProperty(ctx, u.PropertyID, ownerID); err != nil {
+	if _, err := s.requireOwnedProperty(ctx, u.PropertyID, ownerID, access); err != nil {
 		return fmt.Errorf("delete unit %s: %w", id, err)
 	}
 
@@ -282,8 +285,8 @@ func (s *UnitService) DeleteUnit(ctx context.Context, id, ownerID uuid.UUID) err
 	return nil
 }
 
-func (s *UnitService) GetPropertyUnitStats(ctx context.Context, propertyID, ownerID uuid.UUID) (*domain.PropertyUnitStats, error) {
-	if _, err := s.requireOwnedProperty(ctx, propertyID, ownerID); err != nil {
+func (s *UnitService) GetPropertyUnitStats(ctx context.Context, propertyID, ownerID uuid.UUID, access domain.PropertyAccess) (*domain.PropertyUnitStats, error) {
+	if _, err := s.requireOwnedProperty(ctx, propertyID, ownerID, access); err != nil {
 		return nil, fmt.Errorf("get unit stats for property %s: %w", propertyID, err)
 	}
 
@@ -302,16 +305,103 @@ func (s *UnitService) GetPropertyUnitStatsBulk(ctx context.Context, propertyIDs 
 	return stats, nil
 }
 
+func (s *UnitService) requireOwnedUnit(ctx context.Context, unitID, ownerID uuid.UUID, access domain.PropertyAccess) (*domain.Unit, error) {
+	u, err := s.repo.GetByID(ctx, unitID)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := s.requireOwnedProperty(ctx, u.PropertyID, ownerID, access); err != nil {
+		return nil, err
+	}
+	return u, nil
+}
+
+func (s *UnitService) ListDocuments(ctx context.Context, unitID, ownerID uuid.UUID, access domain.PropertyAccess) ([]*domain.UnitDocument, error) {
+	if _, err := s.requireOwnedUnit(ctx, unitID, ownerID, access); err != nil {
+		return nil, fmt.Errorf("list documents for unit %s: %w", unitID, err)
+	}
+
+	docs, err := s.documentRepo.ListByUnit(ctx, unitID)
+	if err != nil {
+		return nil, fmt.Errorf("list documents for unit %s: %w", unitID, err)
+	}
+	return docs, nil
+}
+
+func (s *UnitService) AddDocument(ctx context.Context, unitID, ownerID, uploadedBy, attachmentID uuid.UUID, category domain.UnitDocumentCategory, access domain.PropertyAccess) (*domain.UnitDocument, error) {
+	if _, err := s.requireOwnedUnit(ctx, unitID, ownerID, access); err != nil {
+		return nil, fmt.Errorf("add document to unit %s: %w", unitID, err)
+	}
+	if err := requireOwnedAttachment(ctx, s.attachmentRepo, ownerID, &attachmentID, "attachment_id"); err != nil {
+		return nil, fmt.Errorf("add document to unit %s: %w", unitID, err)
+	}
+	if category == "" {
+		category = domain.UnitDocumentCategoryOther
+	}
+	if !category.Valid() {
+		return nil, fmt.Errorf("add document to unit %s: %w", unitID, domain.ValidationErrors{
+			{Field: "category", Message: fmt.Sprintf("unknown category %q", category)},
+		})
+	}
+
+	d := &domain.UnitDocument{
+		ID:           uuid.New(),
+		UnitID:       unitID,
+		AttachmentID: attachmentID,
+		Category:     category,
+		UploadedBy:   uploadedBy,
+		CreatedAt:    time.Now().UTC(),
+	}
+	if err := s.documentRepo.Create(ctx, d); err != nil {
+		return nil, fmt.Errorf("add document to unit %s: %w", unitID, err)
+	}
+
+	// Create doesn't return the joined display fields (filename,
+	// uploaded-by name, …) — re-fetch so the caller gets the same shape
+	// ListDocuments would.
+	saved, err := s.documentRepo.GetByID(ctx, d.ID)
+	if err != nil {
+		return nil, fmt.Errorf("add document to unit %s: %w", unitID, err)
+	}
+	return saved, nil
+}
+
+func (s *UnitService) DeleteDocument(ctx context.Context, unitID, documentID, ownerID uuid.UUID, access domain.PropertyAccess) error {
+	if _, err := s.requireOwnedUnit(ctx, unitID, ownerID, access); err != nil {
+		return fmt.Errorf("delete document %s: %w", documentID, err)
+	}
+
+	d, err := s.documentRepo.GetByID(ctx, documentID)
+	if err != nil {
+		return fmt.Errorf("delete document %s: %w", documentID, err)
+	}
+	// The document must belong to the unit named in the URL, not just
+	// any unit this owner/access can see — otherwise a valid document id
+	// from a different (even in-scope) unit could be used to delete it
+	// via this unit's route.
+	if d.UnitID != unitID {
+		return fmt.Errorf("delete document %s: %w", documentID, domain.ErrNotFound)
+	}
+
+	if err := s.documentRepo.Delete(ctx, documentID); err != nil {
+		return fmt.Errorf("delete document %s: %w", documentID, err)
+	}
+	return nil
+}
+
 // requireOwnedProperty loads propertyID and returns domain.ErrNotFound
 // (not ErrForbidden) if it belongs to someone else — an authenticated
 // user should not be able to distinguish "not yours" from "doesn't
 // exist" by probing IDs, matching PropertyService's own contract.
-func (s *UnitService) requireOwnedProperty(ctx context.Context, propertyID, ownerID uuid.UUID) (*domain.Property, error) {
+func (s *UnitService) requireOwnedProperty(ctx context.Context, propertyID, ownerID uuid.UUID, access domain.PropertyAccess) (*domain.Property, error) {
 	p, err := s.propertyRepo.GetByID(ctx, propertyID)
 	if err != nil {
 		return nil, err
 	}
 	if p.OwnerID != ownerID {
+		return nil, domain.ErrNotFound
+	}
+	if !access.All && !slices.Contains(access.PropertyIDs, p.ID) {
 		return nil, domain.ErrNotFound
 	}
 	return p, nil

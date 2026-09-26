@@ -266,6 +266,7 @@ const RENT_ROLL_SORT_TO_WIRE: Record<RentRollSortKey, string> = {
 
 export interface RentRollParams {
   propertyId?: string;
+  leaseId?: string;
   status?: PaymentStatus | '';
   /** "YYYY-MM" */
   from?: string;
@@ -338,6 +339,7 @@ export const accountingApi = {
     const { data, meta } = await apiClient.getWithMeta<RentRollWire[], ListMeta>(
       `/api/v1/accounting/rent-roll${query({
         property_id: params.propertyId,
+        lease_id: params.leaseId,
         status: params.status,
         from: params.from,
         to: params.to,

@@ -171,12 +171,13 @@ type UnitListFilter struct {
 }
 
 type UnitListOptions struct {
-	OwnerID  uuid.UUID
-	Filter   UnitListFilter
-	Sort     UnitSortKey
-	SortDesc bool
-	Limit    int
-	Offset   int
+	OwnerID        uuid.UUID
+	PropertyAccess PropertyAccess
+	Filter         UnitListFilter
+	Sort           UnitSortKey
+	SortDesc       bool
+	Limit          int
+	Offset         int
 }
 
 // UnitWithProperty decorates a Unit with its parent property's display
@@ -202,6 +203,57 @@ type PropertyUnitStats struct {
 	OccupiedCount  int
 	OccupancyPct   int
 	TotalCollected float64
+}
+
+// UnitDocumentCategory is a freeform organizational tag on a unit
+// document — TEXT + CHECK, not a native Postgres enum, matching every
+// other status/category column in this codebase.
+type UnitDocumentCategory string
+
+const (
+	UnitDocumentCategoryInspection UnitDocumentCategory = "inspection"
+	UnitDocumentCategoryManual     UnitDocumentCategory = "manual"
+	UnitDocumentCategoryPhoto      UnitDocumentCategory = "photo"
+	UnitDocumentCategoryOther      UnitDocumentCategory = "other"
+)
+
+func (c UnitDocumentCategory) Valid() bool {
+	switch c {
+	case UnitDocumentCategoryInspection, UnitDocumentCategoryManual, UnitDocumentCategoryPhoto, UnitDocumentCategoryOther:
+		return true
+	default:
+		return false
+	}
+}
+
+// UnitDocument is a unit-level file — an inspection report, a manual, a
+// photo — distinct from any lease-linked attachment (none exist today;
+// see the Unit Detail page's Documents tab). UploadedByName/Filename/
+// ContentType/SizeBytes are joined in for a list response; a create
+// request only ever needs AttachmentID.
+type UnitDocument struct {
+	ID             uuid.UUID
+	UnitID         uuid.UUID
+	AttachmentID   uuid.UUID
+	Category       UnitDocumentCategory
+	UploadedBy     uuid.UUID
+	UploadedByName string
+	Filename       string
+	ContentType    string
+	SizeBytes      int64
+	CreatedAt      time.Time
+}
+
+// UnitDocumentRepository is the port implemented by internal/repository/postgres.
+type UnitDocumentRepository interface {
+	Create(ctx context.Context, d *UnitDocument) error
+	// ListByUnit joins attachments for Filename/ContentType/SizeBytes and
+	// users for UploadedByName, newest first.
+	ListByUnit(ctx context.Context, unitID uuid.UUID) ([]*UnitDocument, error)
+	// GetByID is used only to resolve a document's UnitID before an
+	// ownership check — see UnitService.DeleteDocument.
+	GetByID(ctx context.Context, id uuid.UUID) (*UnitDocument, error)
+	Delete(ctx context.Context, id uuid.UUID) error
 }
 
 // UnitRepository is the port implemented by internal/repository/postgres.
@@ -237,25 +289,36 @@ type UnitRepository interface {
 // ErrForbidden) when the unit exists but its property belongs to
 // someone else — the same IDOR-safe contract as PropertyService.
 type UnitService interface {
-	CreateUnit(ctx context.Context, ownerID uuid.UUID, input CreateUnitInput) (*Unit, error)
+	CreateUnit(ctx context.Context, ownerID uuid.UUID, input CreateUnitInput, access PropertyAccess) (*Unit, error)
 	// CreateUnitsBulk backs the "bulk add" spreadsheet-style flow: all
 	// rows are validated up front and inserted together, so a mistake on
 	// row 6 doesn't leave rows 1-5 committed and 7-10 not.
-	CreateUnitsBulk(ctx context.Context, ownerID, propertyID uuid.UUID, inputs []CreateUnitInput) ([]*Unit, error)
-	GetUnit(ctx context.Context, id, ownerID uuid.UUID) (*Unit, error)
-	ListUnitsByProperty(ctx context.Context, propertyID, ownerID uuid.UUID) ([]*Unit, error)
+	CreateUnitsBulk(ctx context.Context, ownerID, propertyID uuid.UUID, inputs []CreateUnitInput, access PropertyAccess) ([]*Unit, error)
+	GetUnit(ctx context.Context, id, ownerID uuid.UUID, access PropertyAccess) (*Unit, error)
+	ListUnitsByProperty(ctx context.Context, propertyID, ownerID uuid.UUID, access PropertyAccess) ([]*Unit, error)
 	// ListUnitsForOwner backs the global Units page — every unit across
 	// every property ownerID owns, filterable/sortable/searchable. See
 	// UnitRepository.ListForOwner for where the ownership scoping
 	// actually happens.
 	ListUnitsForOwner(ctx context.Context, ownerID uuid.UUID, opts UnitListOptions) ([]*UnitWithProperty, int, error)
-	UpdateUnit(ctx context.Context, id, ownerID uuid.UUID, input UpdateUnitInput) (*Unit, error)
-	DeleteUnit(ctx context.Context, id, ownerID uuid.UUID) error
-	GetPropertyUnitStats(ctx context.Context, propertyID, ownerID uuid.UUID) (*PropertyUnitStats, error)
+	UpdateUnit(ctx context.Context, id, ownerID uuid.UUID, input UpdateUnitInput, access PropertyAccess) (*Unit, error)
+	DeleteUnit(ctx context.Context, id, ownerID uuid.UUID, access PropertyAccess) error
+	GetPropertyUnitStats(ctx context.Context, propertyID, ownerID uuid.UUID, access PropertyAccess) (*PropertyUnitStats, error)
 	// GetPropertyUnitStatsBulk takes no ownerID: it exists to decorate a
 	// properties list response that the caller (PropertyHandler.List) has
 	// already scoped to the caller's own properties via
 	// PropertyListOptions.OwnerID, so re-checking ownership per id here
 	// would be redundant.
 	GetPropertyUnitStatsBulk(ctx context.Context, propertyIDs []uuid.UUID) (map[uuid.UUID]*PropertyUnitStats, error)
+
+	// ListDocuments, AddDocument, and DeleteDocument back the Unit Detail
+	// page's Documents tab — folded into UnitService rather than a
+	// separate service, same as GetPropertyUnitStats, since a unit
+	// document has no meaning independent of its unit.
+	ListDocuments(ctx context.Context, unitID, ownerID uuid.UUID, access PropertyAccess) ([]*UnitDocument, error)
+	// AddDocument's uploadedBy is the actor actually signed in
+	// (claims.ActorID), not the account owner — see AuthClaims's doc
+	// comment on UserID vs ActorID.
+	AddDocument(ctx context.Context, unitID, ownerID, uploadedBy, attachmentID uuid.UUID, category UnitDocumentCategory, access PropertyAccess) (*UnitDocument, error)
+	DeleteDocument(ctx context.Context, unitID, documentID, ownerID uuid.UUID, access PropertyAccess) error
 }

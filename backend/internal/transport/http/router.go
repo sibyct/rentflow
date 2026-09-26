@@ -77,7 +77,7 @@ func NewRouter(cfg RouterConfig) http.Handler {
 	propertyOwnerHandler := handlers.NewPropertyOwnerHandler(cfg.PropertyOwnerService)
 	statementHandler := handlers.NewOwnerStatementHandler(cfg.StatementService)
 	staffHandler := handlers.NewStaffHandler(cfg.StaffService)
-	inviteHandler := handlers.NewInviteHandler(cfg.StaffService)
+	publicStaffHandler := handlers.NewPublicStaffHandler(cfg.StaffService)
 
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Route("/auth", func(r chi.Router) {
@@ -87,15 +87,21 @@ func NewRouter(cfg RouterConfig) http.Handler {
 			r.Post("/logout", cfg.AuthHandler.Logout)
 		})
 
-		// Unauthenticated: what a staff invite email links to, reached
-		// before the recipient has a password (see StaffService).
+		// Unauthenticated: what a staff invite or admin-triggered
+		// password-reset email links to, reached before the recipient
+		// has (or can use) a password (see StaffService).
 		r.Route("/invites", func(r chi.Router) {
-			r.Get("/", inviteHandler.Lookup)
-			r.Post("/accept", inviteHandler.Accept)
+			r.Get("/", publicStaffHandler.LookupInvite)
+			r.Post("/accept", publicStaffHandler.AcceptInvite)
+		})
+		r.Route("/password-reset", func(r chi.Router) {
+			r.Get("/", publicStaffHandler.LookupPasswordReset)
+			r.Post("/confirm", publicStaffHandler.ConfirmPasswordReset)
 		})
 
 		r.Group(func(r chi.Router) {
 			r.Use(custommw.Authenticate(cfg.AuthService))
+			r.Use(custommw.ResolvePropertyAccess(cfg.StaffService))
 
 			r.Route("/properties", func(r chi.Router) {
 				r.Post("/", propertyHandler.Create)
@@ -148,6 +154,11 @@ func NewRouter(cfg RouterConfig) http.Handler {
 				// under /properties/{propertyId}/units above — a lease
 				// is always created from the unit page it belongs to.
 				r.Post("/{id}/leases", leaseHandler.Create)
+
+				// The Unit Detail page's Documents tab.
+				r.Get("/{id}/documents", unitHandler.ListDocuments)
+				r.Post("/{id}/documents", unitHandler.AddDocument)
+				r.Delete("/{id}/documents/{documentId}", unitHandler.DeleteDocument)
 			})
 
 			// The portfolio-wide Leases page: every lease across every
@@ -264,6 +275,7 @@ func NewRouter(cfg RouterConfig) http.Handler {
 				r.Post("/{id}/deactivate", staffHandler.Deactivate)
 				r.Post("/{id}/reactivate", staffHandler.Reactivate)
 				r.Post("/{id}/resend-invite", staffHandler.ResendInvite)
+				r.Post("/{id}/reset-password", staffHandler.ResetPassword)
 			})
 		})
 	})

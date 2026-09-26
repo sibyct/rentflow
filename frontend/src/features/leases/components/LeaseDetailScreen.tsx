@@ -134,6 +134,8 @@ export function LeaseDetailScreen({ leaseId }: LeaseDetailScreenProps) {
             <Typography sx={{ fontSize: 13, fontWeight: 600, color: tokens.slate[700], mb: 2 }}>Parties</Typography>
             <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)' }, gap: 2 }}>
               <Field label="Primary resident" value={lease.primaryResidentName} />
+              <Field label="Phone" value={lease.primaryResidentPhone} />
+              <Field label="Email" value={lease.primaryResidentEmail} />
               <Field label="Emergency contact" value={lease.emergencyContact} />
               <Field label="Co-residents" value={lease.coResidents.length > 0 ? lease.coResidents.join(', ') : ''} />
             </Box>

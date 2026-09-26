@@ -49,7 +49,8 @@ func (h *WorkOrderHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	wo, err := h.svc.CreateWorkOrder(r.Context(), claims.UserID, input)
+	access, _ := middleware.PropertyAccessFromContext(r.Context())
+	wo, err := h.svc.CreateWorkOrder(r.Context(), claims.UserID, input, access)
 	if err != nil {
 		response.WriteError(w, r, err)
 		return
@@ -71,7 +72,8 @@ func (h *WorkOrderHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	wo, err := h.svc.GetWorkOrder(r.Context(), id, claims.UserID)
+	access, _ := middleware.PropertyAccessFromContext(r.Context())
+	wo, err := h.svc.GetWorkOrder(r.Context(), id, claims.UserID, access)
 	if err != nil {
 		response.WriteError(w, r, err)
 		return
@@ -94,6 +96,7 @@ func (h *WorkOrderHandler) List(w http.ResponseWriter, r *http.Request) {
 		response.WriteError(w, r, err)
 		return
 	}
+	opts.PropertyAccess, _ = middleware.PropertyAccessFromContext(r.Context())
 
 	orders, total, err := h.svc.ListWorkOrdersForOwner(r.Context(), claims.UserID, opts)
 	if err != nil {
@@ -133,7 +136,8 @@ func (h *WorkOrderHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	wo, err := h.svc.UpdateWorkOrder(r.Context(), id, claims.UserID, input)
+	access, _ := middleware.PropertyAccessFromContext(r.Context())
+	wo, err := h.svc.UpdateWorkOrder(r.Context(), id, claims.UserID, input, access)
 	if err != nil {
 		response.WriteError(w, r, err)
 		return
@@ -155,7 +159,8 @@ func (h *WorkOrderHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.svc.DeleteWorkOrder(r.Context(), id, claims.UserID); err != nil {
+	access, _ := middleware.PropertyAccessFromContext(r.Context())
+	if err := h.svc.DeleteWorkOrder(r.Context(), id, claims.UserID, access); err != nil {
 		response.WriteError(w, r, err)
 		return
 	}
@@ -220,7 +225,8 @@ func (h *WorkOrderHandler) BulkUpdateStatus(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	n, err := h.svc.BulkUpdateStatus(r.Context(), claims.UserID, ids, status)
+	access, _ := middleware.PropertyAccessFromContext(r.Context())
+	n, err := h.svc.BulkUpdateStatus(r.Context(), claims.UserID, ids, status, access)
 	if err != nil {
 		response.WriteError(w, r, err)
 		return
@@ -248,7 +254,8 @@ func (h *WorkOrderHandler) BulkReassign(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	n, err := h.svc.BulkReassign(r.Context(), claims.UserID, ids, req.AssignedTo)
+	access, _ := middleware.PropertyAccessFromContext(r.Context())
+	n, err := h.svc.BulkReassign(r.Context(), claims.UserID, ids, req.AssignedTo, access)
 	if err != nil {
 		response.WriteError(w, r, err)
 		return
@@ -270,7 +277,8 @@ func (h *WorkOrderHandler) ListActivity(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	activity, err := h.svc.ListActivity(r.Context(), id, claims.UserID)
+	access, _ := middleware.PropertyAccessFromContext(r.Context())
+	activity, err := h.svc.ListActivity(r.Context(), id, claims.UserID, access)
 	if err != nil {
 		response.WriteError(w, r, err)
 		return
@@ -298,7 +306,8 @@ func (h *WorkOrderHandler) AddNote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	a, err := h.svc.AddNote(r.Context(), id, claims.UserID, req.Message, domain.MaintenanceVisibility(req.Visibility))
+	access, _ := middleware.PropertyAccessFromContext(r.Context())
+	a, err := h.svc.AddNote(r.Context(), id, claims.UserID, req.Message, domain.MaintenanceVisibility(req.Visibility), access)
 	if err != nil {
 		response.WriteError(w, r, err)
 		return
@@ -333,6 +342,14 @@ func parseWorkOrderListOptions(r *http.Request) (domain.WorkOrderListOptions, er
 			verrs = append(verrs, &domain.ValidationError{Field: "property_id", Message: "must be a valid id"})
 		} else {
 			opts.Filter.PropertyID = &id
+		}
+	}
+	if v := q.Get("unit_id"); v != "" {
+		id, err := uuid.Parse(v)
+		if err != nil {
+			verrs = append(verrs, &domain.ValidationError{Field: "unit_id", Message: "must be a valid id"})
+		} else {
+			opts.Filter.UnitID = &id
 		}
 	}
 	if v := q.Get("vendor_id"); v != "" {

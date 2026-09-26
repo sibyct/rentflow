@@ -32,7 +32,9 @@ export function ExpensesScreen() {
   const [searchParams] = useSearchParams();
 
   const [search, setSearch] = useState('');
-  const [propertyFilter, setPropertyFilter] = useState('');
+  // Seeded once from ?property=<id> — a property detail page's "View in
+  // Expenses" link lands here with, same pattern as UnitsScreen.
+  const [propertyFilter, setPropertyFilter] = useState(searchParams.get('property') ?? '');
   const [categoryFilter, setCategoryFilter] = useState<ExpenseCategory | ''>('');
   const [vendorFilter, setVendorFilter] = useState('');
   // Seeded from ?status=unpaid — the accounting dashboard's Upcoming Expenses card links here.

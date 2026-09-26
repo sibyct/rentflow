@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
+import { ApiError } from '@/api/client';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Checkbox from '@mui/material/Checkbox';
+import CircularProgress from '@mui/material/CircularProgress';
 import Dialog from '@mui/material/Dialog';
 import DialogActions from '@mui/material/DialogActions';
 import DialogContent from '@mui/material/DialogContent';
@@ -20,68 +22,120 @@ import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import CloseOutlined from '@mui/icons-material/CloseOutlined';
 import BlockOutlined from '@mui/icons-material/BlockOutlined';
+import LockResetOutlined from '@mui/icons-material/LockResetOutlined';
 import ReplayOutlined from '@mui/icons-material/ReplayOutlined';
 import InfoOutlined from '@mui/icons-material/InfoOutlined';
 import { tokens } from '@/app/tokens';
+import { useProperties } from '@/features/properties/hooks/usePropertiesQueries';
 import { FormSection, StatusChip } from '@/shared/components';
 import { relativeTime } from '@/shared/lib/relativeTime';
-import { useUsersRolesStore } from '../store/useUsersRolesStore';
+import { useDeactivateStaff, useReactivateStaff, useResetStaffPassword, useUpdateStaff } from '../hooks/useStaffQueries';
 import { initials } from '../utils';
-import {
-  MOCK_PROPERTIES,
-  ROLE_LABELS,
-  STAFF_ROLES,
-  USER_STATUS_LABELS,
-  USER_STATUS_TONE,
-  type PropertyAccess,
-  type StaffRole,
-  type StaffUser,
-} from '../types';
+import { ROLE_LABELS, STAFF_ROLES, USER_STATUS_LABELS, USER_STATUS_TONE, type StaffRole, type StaffUser } from '../types';
+
+interface Toast {
+  message: string;
+  severity: 'success' | 'error';
+}
 
 interface EditUserDrawerProps {
   user: StaffUser | null;
   onClose: () => void;
+  isLastActiveAdmin: (userId: string) => boolean;
+  onToast: (toast: Toast) => void;
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof ApiError ? err.message : 'Something went wrong. Please try again.';
 }
 
 /**
- * Read + edit in place, like WorkOrderDrawer/UnitDetailDrawer elsewhere
- * in this app — role and property scope are editable; identity fields
+ * Read + edit in place, like WorkOrderDrawer elsewhere in this app —
+ * role and property scope are editable; identity fields
  * are read-only. The last-active-Admin safeguard disables both the role
  * select and the Deactivate action, with an inline explanation, rather
- * than letting an account lock itself out of Settings.
+ * than letting an account lock itself out of Settings. The account's
+ * root owner (isAccountOwner) can't be managed here at all — the server
+ * rejects it outright (see StaffService.requireManageableStaff).
  */
-export function EditUserDrawer({ user, onClose }: EditUserDrawerProps) {
-  const updateUser = useUsersRolesStore((s) => s.updateUser);
-  const deactivate = useUsersRolesStore((s) => s.deactivate);
-  const reactivate = useUsersRolesStore((s) => s.reactivate);
-  const isLastActiveAdmin = useUsersRolesStore((s) => s.isLastActiveAdmin);
+export function EditUserDrawer({ user, onClose, isLastActiveAdmin, onToast }: EditUserDrawerProps) {
+  const updateUser = useUpdateStaff();
+  const deactivate = useDeactivateStaff();
+  const reactivate = useReactivateStaff();
+  const resetPassword = useResetStaffPassword();
+  const { data: propertiesResult } = useProperties({ limit: 500, offset: 0 });
+  const properties = propertiesResult?.properties ?? [];
 
   const [role, setRole] = useState<StaffRole>('property_manager');
   const [accessAll, setAccessAll] = useState(true);
-  const [properties, setProperties] = useState<string[]>([]);
+  const [propertyIds, setPropertyIds] = useState<string[]>([]);
   const [confirmDeactivate, setConfirmDeactivate] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   useEffect(() => {
     if (user) {
       setRole(user.role);
       setAccessAll(user.propertyAccess.all);
-      setProperties(user.propertyAccess.properties);
+      setPropertyIds(user.propertyAccess.propertyIds);
+      setSubmitError(null);
     }
   }, [user]);
 
   if (!user) return null;
 
-  const locked = isLastActiveAdmin(user.id);
+  const locked = user.isAccountOwner || isLastActiveAdmin(user.id);
 
-  function toggleProperty(name: string) {
-    setProperties((prev) => (prev.includes(name) ? prev.filter((p) => p !== name) : [...prev, name]));
+  function toggleProperty(id: string) {
+    setPropertyIds((prev) => (prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id]));
   }
 
   function handleSave() {
     if (!user) return;
-    const propertyAccess: PropertyAccess = role === 'admin' ? { all: true, properties: [] } : { all: accessAll, properties };
-    updateUser(user.id, { role, propertyAccess });
-    onClose();
+    setSubmitError(null);
+    updateUser.mutate(
+      { id: user.id, input: { role, propertyAccess: role === 'admin' ? { all: true, propertyIds: [] } : { all: accessAll, propertyIds } } },
+      {
+        onSuccess: () => {
+          onToast({ message: `${user.name}’s access was updated`, severity: 'success' });
+          onClose();
+        },
+        onError: (err) => setSubmitError(errorMessage(err)),
+      },
+    );
+  }
+
+  function handleDeactivate() {
+    if (!user) return;
+    deactivate.mutate(user.id, {
+      onSuccess: () => {
+        setConfirmDeactivate(false);
+        onToast({ message: `${user.name} was deactivated`, severity: 'success' });
+        onClose();
+      },
+      onError: (err) => {
+        setConfirmDeactivate(false);
+        onToast({ message: errorMessage(err), severity: 'error' });
+      },
+    });
+  }
+
+  function handleReactivate() {
+    if (!user) return;
+    reactivate.mutate(user.id, {
+      onSuccess: () => {
+        onToast({ message: `${user.name} was reactivated`, severity: 'success' });
+        onClose();
+      },
+      onError: (err) => onToast({ message: errorMessage(err), severity: 'error' }),
+    });
+  }
+
+  function handleResetPassword() {
+    if (!user) return;
+    resetPassword.mutate(user.id, {
+      onSuccess: () => onToast({ message: `Password reset link sent to ${user.email}`, severity: 'success' }),
+      onError: (err) => onToast({ message: errorMessage(err), severity: 'error' }),
+    });
   }
 
   return (
@@ -102,6 +156,12 @@ export function EditUserDrawer({ user, onClose }: EditUserDrawerProps) {
 
         <Box sx={{ flex: 1, overflowY: 'auto', p: 2.5 }}>
           <Stack spacing={3}>
+            {submitError && (
+              <Alert severity="error" onClose={() => setSubmitError(null)}>
+                {submitError}
+              </Alert>
+            )}
+
             <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>
               <Box
                 sx={{
@@ -131,11 +191,17 @@ export function EditUserDrawer({ user, onClose }: EditUserDrawerProps) {
               Last login: {user.lastLoginAt ? relativeTime(user.lastLoginAt) : 'Never'}
             </Typography>
 
-            {locked && (
-              <Alert severity="warning" icon={<InfoOutlined fontSize="small" />}>
-                This is the only active Admin on the account. Promote another user to Admin before changing this role or
-                deactivating this account.
+            {user.isAccountOwner ? (
+              <Alert severity="info" icon={<InfoOutlined fontSize="small" />}>
+                This is the account's owner — role and access can't be changed here.
               </Alert>
+            ) : (
+              isLastActiveAdmin(user.id) && (
+                <Alert severity="warning" icon={<InfoOutlined fontSize="small" />}>
+                  This is the only active Admin on the account. Promote another user to Admin before changing this role or
+                  deactivating this account.
+                </Alert>
+              )
             )}
 
             <FormSection title="Role">
@@ -161,11 +227,11 @@ export function EditUserDrawer({ user, onClose }: EditUserDrawerProps) {
                   </RadioGroup>
                   {!accessAll && (
                     <Box sx={{ mt: 1, ml: 4, display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)' }}>
-                      {MOCK_PROPERTIES.map((p) => (
+                      {properties.map((p) => (
                         <FormControlLabel
-                          key={p}
-                          control={<Checkbox size="small" disabled={locked} checked={properties.includes(p)} onChange={() => toggleProperty(p)} />}
-                          label={<Typography sx={{ fontSize: 13 }}>{p}</Typography>}
+                          key={p.id}
+                          control={<Checkbox size="small" disabled={locked} checked={propertyIds.includes(p.id)} onChange={() => toggleProperty(p.id)} />}
+                          label={<Typography sx={{ fontSize: 13 }}>{p.name}</Typography>}
                         />
                       ))}
                     </Box>
@@ -178,29 +244,35 @@ export function EditUserDrawer({ user, onClose }: EditUserDrawerProps) {
 
         <Divider />
         <Stack direction="row" sx={{ p: 2, justifyContent: 'space-between', alignItems: 'center' }}>
-          {user.status === 'active' ? (
-            <Tooltip title={locked ? "This is the only active Admin on the account." : ''}>
-              <span>
-                <Button
-                  variant="text"
-                  color="error"
-                  startIcon={<BlockOutlined fontSize="small" />}
-                  disabled={locked}
-                  onClick={() => setConfirmDeactivate(true)}
-                >
-                  Deactivate
-                </Button>
-              </span>
-            </Tooltip>
+          {user.isAccountOwner ? (
+            <span />
+          ) : user.status === 'active' ? (
+            <Stack direction="row" spacing={0.5}>
+              <Button
+                variant="text"
+                startIcon={<LockResetOutlined fontSize="small" />}
+                disabled={resetPassword.isPending}
+                onClick={handleResetPassword}
+                sx={{ color: tokens.slate[700] }}
+              >
+                Reset password
+              </Button>
+              <Tooltip title={locked ? "This is the only active Admin on the account." : ''}>
+                <span>
+                  <Button
+                    variant="text"
+                    color="error"
+                    startIcon={<BlockOutlined fontSize="small" />}
+                    disabled={locked}
+                    onClick={() => setConfirmDeactivate(true)}
+                  >
+                    Deactivate
+                  </Button>
+                </span>
+              </Tooltip>
+            </Stack>
           ) : user.status === 'deactivated' ? (
-            <Button
-              variant="text"
-              startIcon={<ReplayOutlined fontSize="small" />}
-              onClick={() => {
-                reactivate(user.id);
-                onClose();
-              }}
-            >
+            <Button variant="text" startIcon={<ReplayOutlined fontSize="small" />} disabled={reactivate.isPending} onClick={handleReactivate}>
               Reactivate
             </Button>
           ) : (
@@ -211,8 +283,13 @@ export function EditUserDrawer({ user, onClose }: EditUserDrawerProps) {
             <Button variant="text" onClick={onClose} sx={{ color: tokens.slate[600] }}>
               Cancel
             </Button>
-            <Button variant="contained" onClick={handleSave}>
-              Save changes
+            <Button
+              variant="contained"
+              onClick={handleSave}
+              disabled={locked || updateUser.isPending}
+              startIcon={updateUser.isPending ? <CircularProgress size={15} color="inherit" /> : undefined}
+            >
+              {updateUser.isPending ? 'Saving…' : 'Save changes'}
             </Button>
           </Stack>
         </Stack>
@@ -229,15 +306,7 @@ export function EditUserDrawer({ user, onClose }: EditUserDrawerProps) {
           <Button variant="text" onClick={() => setConfirmDeactivate(false)} sx={{ color: tokens.slate[600] }}>
             Cancel
           </Button>
-          <Button
-            variant="contained"
-            color="error"
-            onClick={() => {
-              deactivate(user.id);
-              setConfirmDeactivate(false);
-              onClose();
-            }}
-          >
+          <Button variant="contained" color="error" disabled={deactivate.isPending} onClick={handleDeactivate}>
             Deactivate
           </Button>
         </DialogActions>

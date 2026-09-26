@@ -94,6 +94,8 @@ export interface LeaseDetail extends LeaseRow {
   rentDueDay: number | null;
   lateFeeAmount: number | null;
   lateFeeGraceDays: number | null;
+  primaryResidentPhone: string;
+  primaryResidentEmail: string;
   emergencyContact: string;
   terminationReason: TerminationReason;
   terminationNoticeDate: string;

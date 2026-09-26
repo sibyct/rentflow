@@ -47,7 +47,13 @@ export function MaintenanceScreen() {
   const [vendorFilterName, setVendorFilterName] = useState(() => searchParams.get('vendor_name') ?? '');
 
   const [search, setSearch] = useState('');
-  const [propertyFilter, setPropertyFilter] = useState('');
+  // Seeded once from ?property=<id> — a property detail page's "View in
+  // Maintenance" link lands here with, same pattern as UnitsScreen.
+  const [propertyFilter, setPropertyFilter] = useState(searchParams.get('property') ?? '');
+  // Seeded once from ?unit=<id> — a unit detail page's Maintenance tab
+  // "View in Maintenance" link lands here with. No toolbar control for
+  // it (unlike propertyFilter above): it's a cross-link landing filter.
+  const [unitFilter] = useState(searchParams.get('unit') ?? '');
   const [statusFilter, setStatusFilter] = useState<WorkOrderStatus | ''>('');
   // Seeded once from ?priority=emergency — the Dashboard's maintenance
   // priority chips land here with.
@@ -83,6 +89,7 @@ export function MaintenanceScreen() {
   const { data, isLoading, isError, error, refetch } = useWorkOrders({
     search: search || undefined,
     propertyId: propertyFilter || undefined,
+    unitId: unitFilter || undefined,
     status: statusFilter || undefined,
     priority: effectivePriorityFilter || undefined,
     category: categoryFilter || undefined,
@@ -101,7 +108,7 @@ export function MaintenanceScreen() {
 
   const workOrders = data?.workOrders ?? [];
   const total = data?.total ?? 0;
-  const isFiltered = Boolean(search || propertyFilter || statusFilter || priorityFilter || categoryFilter || activeCounter || vendorFilter);
+  const isFiltered = Boolean(search || propertyFilter || unitFilter || statusFilter || priorityFilter || categoryFilter || activeCounter || vendorFilter);
   const emptyState: MaintenanceEmptyState = isLoading || total > 0 ? { kind: 'none' } : isFiltered ? { kind: 'filtered' } : { kind: 'first-time' };
 
   function handleSort(key: WorkOrderSortKey) {

@@ -27,19 +27,19 @@ var _ domain.LeaseRepository = (*LeaseRepository)(nil)
 const leaseColumns = `
 	id, unit_id, lease_type, status, start_date, end_date, move_in_date, move_out_date,
 	monthly_rent, security_deposit, deposit_status, rent_due_day, late_fee_amount, late_fee_grace_days,
-	primary_resident_name, co_residents, emergency_contact, renewal_status, termination_reason,
-	termination_notice_date, signed, signed_date, notes, created_at, updated_at`
+	primary_resident_name, primary_resident_phone, primary_resident_email, co_residents, emergency_contact,
+	renewal_status, termination_reason, termination_notice_date, signed, signed_date, notes, created_at, updated_at`
 
 func (r *LeaseRepository) Create(ctx context.Context, l *domain.Lease) error {
 	const q = `
 		INSERT INTO leases (` + leaseColumns + `)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)`
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)`
 
 	_, err := r.pool.Exec(ctx, q,
 		l.ID, l.UnitID, l.Type, l.Status, l.StartDate, l.EndDate, l.MoveInDate, l.MoveOutDate,
 		l.MonthlyRent, l.SecurityDeposit, depositStatusArg(l.DepositStatus), l.RentDueDay, l.LateFeeAmount, l.LateFeeGraceDays,
-		l.PrimaryResidentName, l.CoResidents, l.EmergencyContact, l.RenewalStatus, terminationReasonArg(l.TerminationReason),
-		l.TerminationNoticeDate, l.Signed, l.SignedDate, l.Notes, l.CreatedAt, l.UpdatedAt,
+		l.PrimaryResidentName, l.PrimaryResidentPhone, l.PrimaryResidentEmail, l.CoResidents, l.EmergencyContact,
+		l.RenewalStatus, terminationReasonArg(l.TerminationReason), l.TerminationNoticeDate, l.Signed, l.SignedDate, l.Notes, l.CreatedAt, l.UpdatedAt,
 	)
 	if err != nil {
 		return fmt.Errorf("insert lease %s: %w", l.ID, err)
@@ -67,8 +67,8 @@ func (r *LeaseRepository) GetByID(ctx context.Context, id uuid.UUID) (*domain.Le
 const qualifiedLeaseColumns = `
 	l.id, l.unit_id, l.lease_type, l.status, l.start_date, l.end_date, l.move_in_date, l.move_out_date,
 	l.monthly_rent, l.security_deposit, l.deposit_status, l.rent_due_day, l.late_fee_amount, l.late_fee_grace_days,
-	l.primary_resident_name, l.co_residents, l.emergency_contact, l.renewal_status, l.termination_reason,
-	l.termination_notice_date, l.signed, l.signed_date, l.notes, l.created_at, l.updated_at`
+	l.primary_resident_name, l.primary_resident_phone, l.primary_resident_email, l.co_residents, l.emergency_contact,
+	l.renewal_status, l.termination_reason, l.termination_notice_date, l.signed, l.signed_date, l.notes, l.created_at, l.updated_at`
 
 var leaseSortColumns = map[domain.LeaseSortKey]string{
 	domain.LeaseSortStartDate:   "l.start_date",
@@ -126,6 +126,10 @@ func (r *LeaseRepository) ListForOwner(ctx context.Context, opts domain.LeaseLis
 	if opts.Filter.DisplayStatus != nil {
 		where = append(where, displayStatusWhere(*opts.Filter.DisplayStatus))
 	}
+	if !opts.PropertyAccess.All {
+		args = append(args, opts.PropertyAccess.PropertyIDs)
+		where = append(where, fmt.Sprintf("p.id = ANY($%d)", len(args)))
+	}
 	whereClause := strings.Join(where, " AND ")
 
 	sortColumn, ok := leaseSortColumns[opts.Sort]
@@ -181,15 +185,15 @@ func (r *LeaseRepository) Update(ctx context.Context, l *domain.Lease) error {
 		UPDATE leases
 		SET lease_type = $2, status = $3, start_date = $4, end_date = $5, move_in_date = $6, move_out_date = $7,
 			monthly_rent = $8, security_deposit = $9, deposit_status = $10, rent_due_day = $11, late_fee_amount = $12,
-			late_fee_grace_days = $13, primary_resident_name = $14, co_residents = $15, emergency_contact = $16,
-			renewal_status = $17, termination_reason = $18, termination_notice_date = $19, signed = $20,
-			signed_date = $21, notes = $22, updated_at = $23
+			late_fee_grace_days = $13, primary_resident_name = $14, primary_resident_phone = $15, primary_resident_email = $16,
+			co_residents = $17, emergency_contact = $18, renewal_status = $19, termination_reason = $20,
+			termination_notice_date = $21, signed = $22, signed_date = $23, notes = $24, updated_at = $25
 		WHERE id = $1`
 
 	tag, err := r.pool.Exec(ctx, q,
 		l.ID, l.Type, l.Status, l.StartDate, l.EndDate, l.MoveInDate, l.MoveOutDate,
 		l.MonthlyRent, l.SecurityDeposit, depositStatusArg(l.DepositStatus), l.RentDueDay, l.LateFeeAmount,
-		l.LateFeeGraceDays, l.PrimaryResidentName, l.CoResidents, l.EmergencyContact,
+		l.LateFeeGraceDays, l.PrimaryResidentName, l.PrimaryResidentPhone, l.PrimaryResidentEmail, l.CoResidents, l.EmergencyContact,
 		l.RenewalStatus, terminationReasonArg(l.TerminationReason), l.TerminationNoticeDate, l.Signed,
 		l.SignedDate, l.Notes, l.UpdatedAt,
 	)
@@ -246,8 +250,8 @@ func scanLease(row rowScanner) (*domain.Lease, error) {
 	err := row.Scan(
 		&l.ID, &l.UnitID, &l.Type, &l.Status, &l.StartDate, &endDate, &moveInDate, &moveOutDate,
 		&l.MonthlyRent, &securityDeposit, &depositStatus, &rentDueDay, &lateFeeAmount, &lateFeeGraceDays,
-		&l.PrimaryResidentName, &l.CoResidents, &l.EmergencyContact, &l.RenewalStatus, &terminationReason,
-		&terminationNoticeDate, &l.Signed, &signedDate, &l.Notes, &l.CreatedAt, &l.UpdatedAt,
+		&l.PrimaryResidentName, &l.PrimaryResidentPhone, &l.PrimaryResidentEmail, &l.CoResidents, &l.EmergencyContact,
+		&l.RenewalStatus, &terminationReason, &terminationNoticeDate, &l.Signed, &signedDate, &l.Notes, &l.CreatedAt, &l.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err
@@ -266,8 +270,8 @@ func scanLeaseWithUnitProperty(row rowScanner) (*domain.LeaseWithUnitProperty, e
 	err := row.Scan(
 		&l.ID, &l.UnitID, &l.Type, &l.Status, &l.StartDate, &endDate, &moveInDate, &moveOutDate,
 		&l.MonthlyRent, &securityDeposit, &depositStatus, &rentDueDay, &lateFeeAmount, &lateFeeGraceDays,
-		&l.PrimaryResidentName, &l.CoResidents, &l.EmergencyContact, &l.RenewalStatus, &terminationReason,
-		&terminationNoticeDate, &l.Signed, &signedDate, &l.Notes, &l.CreatedAt, &l.UpdatedAt,
+		&l.PrimaryResidentName, &l.PrimaryResidentPhone, &l.PrimaryResidentEmail, &l.CoResidents, &l.EmergencyContact,
+		&l.RenewalStatus, &terminationReason, &terminationNoticeDate, &l.Signed, &signedDate, &l.Notes, &l.CreatedAt, &l.UpdatedAt,
 		&l.UnitName, &l.PropertyID, &l.PropertyName,
 	)
 	if err != nil {

@@ -57,7 +57,7 @@ func (f *fakePropertyService) CreateProperty(_ context.Context, input domain.Cre
 	}, nil
 }
 
-func (f *fakePropertyService) GetProperty(_ context.Context, id, ownerID uuid.UUID) (*domain.Property, error) {
+func (f *fakePropertyService) GetProperty(_ context.Context, id, ownerID uuid.UUID, _ domain.PropertyAccess) (*domain.Property, error) {
 	return nil, domain.ErrNotFound
 }
 
@@ -65,15 +65,15 @@ func (f *fakePropertyService) ListProperties(_ context.Context, _ domain.Propert
 	return []*domain.Property{}, 0, nil
 }
 
-func (f *fakePropertyService) UpdateProperty(_ context.Context, _, _ uuid.UUID, _ domain.UpdatePropertyInput) (*domain.Property, error) {
+func (f *fakePropertyService) UpdateProperty(_ context.Context, _, _ uuid.UUID, _ domain.UpdatePropertyInput, _ domain.PropertyAccess) (*domain.Property, error) {
 	return nil, domain.ErrNotFound
 }
 
-func (f *fakePropertyService) DeleteProperty(_ context.Context, _, _ uuid.UUID) error {
+func (f *fakePropertyService) DeleteProperty(_ context.Context, _, _ uuid.UUID, _ domain.PropertyAccess) error {
 	return domain.ErrNotFound
 }
 
-func (f *fakePropertyService) BulkUpdateStatus(_ context.Context, _ uuid.UUID, _ []uuid.UUID, _ domain.PropertyStatus) (int, error) {
+func (f *fakePropertyService) BulkUpdateStatus(_ context.Context, _ uuid.UUID, _ []uuid.UUID, _ domain.PropertyStatus, _ domain.PropertyAccess) (int, error) {
 	return 0, nil
 }
 
@@ -84,19 +84,19 @@ func (f *fakePropertyService) BulkUpdateStatus(_ context.Context, _ uuid.UUID, _
 // GetPropertyUnitStatsBulk) not to panic.
 type fakeUnitService struct{}
 
-func (f *fakeUnitService) CreateUnit(_ context.Context, _ uuid.UUID, _ domain.CreateUnitInput) (*domain.Unit, error) {
+func (f *fakeUnitService) CreateUnit(_ context.Context, _ uuid.UUID, _ domain.CreateUnitInput, _ domain.PropertyAccess) (*domain.Unit, error) {
 	return nil, domain.ErrNotFound
 }
 
-func (f *fakeUnitService) CreateUnitsBulk(_ context.Context, _, _ uuid.UUID, _ []domain.CreateUnitInput) ([]*domain.Unit, error) {
+func (f *fakeUnitService) CreateUnitsBulk(_ context.Context, _, _ uuid.UUID, _ []domain.CreateUnitInput, _ domain.PropertyAccess) ([]*domain.Unit, error) {
 	return nil, domain.ErrNotFound
 }
 
-func (f *fakeUnitService) GetUnit(_ context.Context, _, _ uuid.UUID) (*domain.Unit, error) {
+func (f *fakeUnitService) GetUnit(_ context.Context, _, _ uuid.UUID, _ domain.PropertyAccess) (*domain.Unit, error) {
 	return nil, domain.ErrNotFound
 }
 
-func (f *fakeUnitService) ListUnitsByProperty(_ context.Context, _, _ uuid.UUID) ([]*domain.Unit, error) {
+func (f *fakeUnitService) ListUnitsByProperty(_ context.Context, _, _ uuid.UUID, _ domain.PropertyAccess) ([]*domain.Unit, error) {
 	return []*domain.Unit{}, nil
 }
 
@@ -104,26 +104,86 @@ func (f *fakeUnitService) ListUnitsForOwner(_ context.Context, _ uuid.UUID, _ do
 	return []*domain.UnitWithProperty{}, 0, nil
 }
 
-func (f *fakeUnitService) UpdateUnit(_ context.Context, _, _ uuid.UUID, _ domain.UpdateUnitInput) (*domain.Unit, error) {
+func (f *fakeUnitService) UpdateUnit(_ context.Context, _, _ uuid.UUID, _ domain.UpdateUnitInput, _ domain.PropertyAccess) (*domain.Unit, error) {
 	return nil, domain.ErrNotFound
 }
 
-func (f *fakeUnitService) DeleteUnit(_ context.Context, _, _ uuid.UUID) error {
+func (f *fakeUnitService) DeleteUnit(_ context.Context, _, _ uuid.UUID, _ domain.PropertyAccess) error {
 	return domain.ErrNotFound
 }
 
-func (f *fakeUnitService) GetPropertyUnitStats(_ context.Context, _, _ uuid.UUID) (*domain.PropertyUnitStats, error) {
+func (f *fakeUnitService) GetPropertyUnitStats(_ context.Context, _, _ uuid.UUID, _ domain.PropertyAccess) (*domain.PropertyUnitStats, error) {
 	return nil, domain.ErrNotFound
+}
+
+func (f *fakeUnitService) ListDocuments(_ context.Context, _, _ uuid.UUID, _ domain.PropertyAccess) ([]*domain.UnitDocument, error) {
+	return nil, domain.ErrNotFound
+}
+
+func (f *fakeUnitService) AddDocument(_ context.Context, _, _, _, _ uuid.UUID, _ domain.UnitDocumentCategory, _ domain.PropertyAccess) (*domain.UnitDocument, error) {
+	return nil, domain.ErrNotFound
+}
+
+func (f *fakeUnitService) DeleteDocument(_ context.Context, _, _, _ uuid.UUID, _ domain.PropertyAccess) error {
+	return domain.ErrNotFound
 }
 
 func (f *fakeUnitService) GetPropertyUnitStatsBulk(_ context.Context, _ []uuid.UUID) (map[uuid.UUID]*domain.PropertyUnitStats, error) {
 	return map[uuid.UUID]*domain.PropertyUnitStats{}, nil
 }
 
+// fakeStaffService is a minimal stand-in for domain.StaffService: this
+// router test doesn't exercise Users & Roles behavior, it only needs
+// ResolveAccess to satisfy the ResolvePropertyAccess middleware every
+// authenticated route now runs through, so every other method is an
+// unreachable stub.
+type fakeStaffService struct{}
+
+func (f *fakeStaffService) Invite(_ context.Context, _, _ uuid.UUID, _ domain.InviteStaffInput) (*domain.StaffInviteResult, error) {
+	return nil, domain.ErrNotFound
+}
+func (f *fakeStaffService) List(_ context.Context, _ uuid.UUID) ([]*domain.StaffMember, error) {
+	return nil, nil
+}
+func (f *fakeStaffService) Update(_ context.Context, _, _, _ uuid.UUID, _ domain.UpdateStaffInput) (*domain.StaffMember, error) {
+	return nil, domain.ErrNotFound
+}
+func (f *fakeStaffService) Deactivate(_ context.Context, _, _, _ uuid.UUID) error {
+	return domain.ErrNotFound
+}
+func (f *fakeStaffService) Reactivate(_ context.Context, _, _, _ uuid.UUID) error {
+	return domain.ErrNotFound
+}
+func (f *fakeStaffService) ResendInvite(_ context.Context, _, _, _ uuid.UUID) (string, error) {
+	return "", domain.ErrNotFound
+}
+func (f *fakeStaffService) AuditLog(_ context.Context, _ uuid.UUID, _, _ int) ([]*domain.StaffAuditEntry, int, error) {
+	return nil, 0, nil
+}
+func (f *fakeStaffService) ResetPassword(_ context.Context, _, _, _ uuid.UUID) (string, error) {
+	return "", domain.ErrNotFound
+}
+func (f *fakeStaffService) LookupInvite(_ context.Context, _ string) (*domain.InviteLookup, error) {
+	return nil, domain.ErrNotFound
+}
+func (f *fakeStaffService) AcceptInvite(_ context.Context, _ domain.AcceptInviteInput) error {
+	return domain.ErrNotFound
+}
+func (f *fakeStaffService) LookupPasswordReset(_ context.Context, _ string) (*domain.PasswordResetLookup, error) {
+	return nil, domain.ErrNotFound
+}
+func (f *fakeStaffService) ConfirmPasswordReset(_ context.Context, _ domain.ConfirmPasswordResetInput) error {
+	return domain.ErrNotFound
+}
+func (f *fakeStaffService) ResolveAccess(_ context.Context, _, _ uuid.UUID) (domain.PropertyAccess, error) {
+	return domain.AllPropertyAccess(), nil
+}
+
 func newTestRouter() http.Handler {
 	authSvc := &fakeAuthService{userID: uuid.New()}
 	propertySvc := &fakePropertyService{}
 	unitSvc := &fakeUnitService{}
+	staffSvc := &fakeStaffService{}
 
 	return transporthttp.NewRouter(transporthttp.RouterConfig{
 		Logger:          slog.New(slog.NewTextHandler(bytes.NewBuffer(nil), nil)),
@@ -131,6 +191,7 @@ func newTestRouter() http.Handler {
 		AuthService:     authSvc,
 		PropertyService: propertySvc,
 		UnitService:     unitSvc,
+		StaffService:    staffSvc,
 		AuthHandler:     handlers.NewAuthHandler(authSvc, 15*time.Minute, time.Hour, "", false),
 		HealthHandler:   handlers.NewHealthHandler(alwaysUpPinger{}, alwaysUpPinger{}),
 		VersionHandler:  handlers.NewVersionHandler("test-version", "test-commit", "test-build-date"),

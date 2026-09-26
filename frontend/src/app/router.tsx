@@ -6,10 +6,12 @@ import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
 import { AcceptInvitePage } from './pages/AcceptInvitePage';
+import { ResetPasswordPage } from './pages/ResetPasswordPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { PropertiesPage } from './pages/PropertiesPage';
 import { PropertyDetailPage } from './pages/PropertyDetailPage';
 import { UnitsPage } from './pages/UnitsPage';
+import { UnitDetailPage } from './pages/UnitDetailPage';
 import { LeasesPage } from './pages/LeasesPage';
 import { LeaseDetailPage } from './pages/LeaseDetailPage';
 import { MaintenancePage } from './pages/MaintenancePage';
@@ -32,10 +34,13 @@ export function AppRouter() {
         <Route path="login" element={<LoginPage />} />
         <Route path="register" element={<RegisterPage />} />
         <Route path="forgot-password" element={<ForgotPasswordPage />} />
-        {/* Where a staff invite email links to — a design prototype, see
-            features/settings/types.ts. Pre-auth like the routes above it,
-            so it shares this same split layout rather than the app shell. */}
+        {/* Where a staff invite email links to (?token=...) — pre-auth
+            like the routes above it, so it shares this same split layout
+            rather than the app shell. */}
         <Route path="accept-invite" element={<AcceptInvitePage />} />
+        {/* Where an admin-triggered "reset password" email links to
+            (?token=...) — same pre-auth split layout as above. */}
+        <Route path="reset-password" element={<ResetPasswordPage />} />
       </Route>
 
       {/* Authenticated app: one ProtectedRoute guarding the whole shell,
@@ -58,6 +63,7 @@ export function AppRouter() {
         <Route path="properties/:id" element={<PropertyDetailPage />} />
 
         <Route path="units" element={<UnitsPage />} />
+        <Route path="units/:id" element={<UnitDetailPage />} />
 
         <Route path="leases" element={<LeasesPage />} />
         <Route path="leases/:id" element={<LeaseDetailPage />} />

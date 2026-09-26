@@ -4,30 +4,40 @@ import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Chip from '@mui/material/Chip';
+import LinearProgress from '@mui/material/LinearProgress';
 import Link from '@mui/material/Link';
 import Paper from '@mui/material/Paper';
 import Snackbar from '@mui/material/Snackbar';
 import Stack from '@mui/material/Stack';
+import Tab from '@mui/material/Tab';
+import Tabs from '@mui/material/Tabs';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import AddHomeOutlined from '@mui/icons-material/AddHomeOutlined';
 import ArchiveOutlined from '@mui/icons-material/ArchiveOutlined';
 import EditOutlined from '@mui/icons-material/EditOutlined';
+import PaymentsOutlined from '@mui/icons-material/PaymentsOutlined';
 import UnarchiveOutlined from '@mui/icons-material/UnarchiveOutlined';
 import type { SvgIconComponent } from '@mui/icons-material';
 import { ApiError } from '@/api/client';
 import { tokens } from '@/app/tokens';
 import { ERROR_STATE_PRESETS, ErrorState, LoadingSpinner } from '@/shared/components';
+import { PropertyFinancialsSection } from '@/features/accounting';
+import { PropertyLeasesSection } from '@/features/leases';
+import { PropertyMaintenanceSection } from '@/features/maintenance';
+import { useWorkOrders } from '@/features/maintenance/hooks/useWorkOrdersQueries';
 import { UnitsSection } from '@/features/units';
+import { useUnits } from '@/features/units/hooks/useUnitsQueries';
+import type { UnitRow } from '@/features/units/types';
 import { useProperty, useUpdatePropertyStatus } from '../hooks/usePropertiesQueries';
 import type { PropertyRow, PropertyRowStatus } from '../mock/propertyRows';
 import { PropertyFormModal } from './PropertyFormModal';
 
 // A residential_single_unit property IS its one (backend-auto-created,
 // not separately managed) unit — see PropertyService.CreateProperty —
-// so the Units section only makes sense for property types that can
+// so the Units tab/section only makes sense for property types that can
 // genuinely have more than one.
-const SHOWS_UNITS_SECTION: Record<string, boolean> = {
+const SHOWS_UNITS_TAB: Record<string, boolean> = {
   'Residential – Single Unit': false,
   'Residential – Multi Unit': true,
   Commercial: true,
@@ -39,6 +49,13 @@ const STATUS_COLOR: Record<PropertyRowStatus, 'success' | 'info' | 'default'> = 
   Onboarding: 'info',
   Archived: 'default',
 };
+
+// A simple, fixed presentation threshold — not a per-property
+// configurable target (there's no such field on the backend) — just
+// what "below target" means for the occupancy stat tile's chip/bar.
+const OCCUPANCY_TARGET_PCT = 90;
+
+const OPEN_STATUSES = new Set(['new', 'assigned', 'in_progress', 'on_hold']);
 
 const currency = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
 const dateFormatter = new Intl.DateTimeFormat('en-US', { dateStyle: 'medium' });
@@ -65,11 +82,14 @@ function relativeTime(iso: string): string {
   return dateFormatter.format(then);
 }
 
-/** Splits "Residential – Single Unit" into a primary "Single Unit" + secondary "Residential" line; other types have no broader category to show. */
-function splitTypeLabel(type: string): { primary: string; secondary?: string } {
-  const [category, specific] = type.split(' – ');
-  return specific ? { primary: specific, secondary: category } : { primary: type };
+/** Whole days between vacatedAt and now, for "Vacant · N days". */
+function daysSince(iso: string): number {
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return 0;
+  return Math.max(0, Math.floor((Date.now() - then) / 86_400_000));
 }
+
+type TabKey = 'overview' | 'units' | 'leases' | 'maintenance' | 'financials';
 
 interface PropertyDetailScreenProps {
   propertyId: string;
@@ -79,9 +99,25 @@ export function PropertyDetailScreen({ propertyId }: PropertyDetailScreenProps) 
   const { data: property, isLoading, isError, error, refetch } = useProperty(propertyId);
   const updateStatus = useUpdatePropertyStatus();
 
+  const [tab, setTab] = useState<TabKey>('overview');
   const [editOpen, setEditOpen] = useState(false);
   const [editInitialStep, setEditInitialStep] = useState(0);
   const [toast, setToast] = useState<{ message: string; severity: 'success' | 'error' } | null>(null);
+
+  const showsUnitsTab = property ? SHOWS_UNITS_TAB[property.type] : false;
+
+  // Backs both the Overview tab's compact Units preview and the Units
+  // stat tile — already the exact query UnitsSection itself uses, so
+  // TanStack Query dedupes this into one request when both are visible.
+  const { data: units } = useUnits(showsUnitsTab ? propertyId : undefined);
+
+  // A property-sized page (not the portfolio), so a generous limit
+  // fetches everything there is to count rather than needing a
+  // dedicated property-scoped summary endpoint.
+  const { data: workOrdersData } = useWorkOrders({ propertyId, limit: 200, offset: 0 });
+  const workOrders = workOrdersData?.workOrders ?? [];
+  const openWorkOrders = workOrders.filter((w) => OPEN_STATUSES.has(w.status));
+  const overdueWorkOrders = openWorkOrders.filter((w) => w.isOverdue);
 
   function openEdit(stepIndex = 0) {
     setEditInitialStep(stepIndex);
@@ -117,7 +153,6 @@ export function PropertyDetailScreen({ propertyId }: PropertyDetailScreenProps) 
 
   if (!property) return null;
 
-  const type = splitTypeLabel(property.type);
   const nextStatus: PropertyRowStatus = property.status === 'Archived' ? 'Active' : 'Archived';
 
   function toggleArchive() {
@@ -155,7 +190,7 @@ export function PropertyDetailScreen({ propertyId }: PropertyDetailScreenProps) 
         </Stack>
         <Stack direction="row" spacing={1.5}>
           <Button variant="outlined" startIcon={<EditOutlined />} onClick={() => openEdit(0)} sx={{ borderColor: tokens.slate[300], color: tokens.slate[700] }}>
-            Edit
+            Edit property
           </Button>
           <Button
             variant="outlined"
@@ -165,6 +200,13 @@ export function PropertyDetailScreen({ propertyId }: PropertyDetailScreenProps) 
             sx={{ borderColor: tokens.slate[300], color: tokens.slate[700] }}
           >
             {property.status === 'Archived' ? 'Restore' : 'Archive'}
+          </Button>
+          {/* Real navigation, not a bespoke one-click flow: there's no
+              single "the" lease to collect from without a specific row
+              — this jumps straight to this property's own Rent Roll,
+              where every outstanding balance can be recorded for real. */}
+          <Button variant="contained" startIcon={<PaymentsOutlined />} onClick={() => setTab('financials')}>
+            Collect rent
           </Button>
         </Stack>
       </Stack>
@@ -183,56 +225,68 @@ export function PropertyDetailScreen({ propertyId }: PropertyDetailScreenProps) 
       )}
 
       <Stack direction="row" spacing={2} sx={{ flexWrap: 'wrap', mb: 2.5 }}>
-        <StatTile label="Type" value={type.primary} secondary={type.secondary} />
         <StatTile label="Units" value={String(property.unitCount)} secondary={property.unitCount > 0 ? undefined : 'No units yet'} />
-        {/* Computed server-side from real unit rows (see
-            UnitRepository.GetPropertyUnitStats) — "—" / "Not tracked"
-            only while there are no units to compute from yet, not a
-            fake-looking "0%" / "$0". collected_this_month still
-            approximates rent owed by occupied units, not a real
-            payments feature. */}
-        <StatTile label="Occupancy" value={property.unitCount > 0 ? `${property.occupancyPct}%` : '—'} secondary={property.unitCount > 0 ? undefined : 'Not tracked'} />
+        <OccupancyStatTile occupancyPct={property.occupancyPct} tracked={property.unitCount > 0} />
+        {/* collected_this_month approximates rent owed by occupied
+            units (see backend/internal/domain/unit.go's
+            PropertyUnitStats doc comment) — there's no payments-history
+            feature yet to compute a real "vs last month" delta from,
+            so this stays a plain current figure rather than inventing one. */}
         <StatTile
           label="Collected this month"
           value={property.unitCount > 0 ? currency.format(property.collectedThisMonth) : '—'}
           secondary={property.unitCount > 0 ? undefined : 'Not tracked'}
         />
+        <WorkOrdersStatTile open={openWorkOrders.length} overdue={overdueWorkOrders} onViewOverdue={() => setTab('maintenance')} />
       </Stack>
 
-      <Stack direction={{ xs: 'column', md: 'row' }} spacing={2.5} sx={{ alignItems: 'flex-start' }}>
-        <Stack spacing={2.5} sx={{ flex: '2 1 480px', minWidth: 0, width: '100%' }}>
-          <Paper variant="outlined" sx={{ p: 3 }}>
-            <Typography sx={{ fontSize: 13, fontWeight: 600, color: tokens.slate[700], mb: 2 }}>Property details</Typography>
-            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, 1fr)' }, gap: 2 }}>
-              <Field label="Address line 1" value={property.addressLine1} />
-              <Field label="Address line 2" value={property.addressLine2} />
-              <Field label="City" value={property.city} />
-              <Field label="State" value={property.stateProvince} />
-              <Field label="Postal code" value={property.postalCode} />
-              <Field label="Country" value={property.country} />
-              <Field label="Year built" value={property.yearBuilt ? String(property.yearBuilt) : ''} />
-              <Field label="Onboard date" value={property.onboardDate ? formatDate(property.onboardDate) : ''} />
-            </Box>
+      <Tabs value={tab} onChange={(_e, v: TabKey) => setTab(v)} sx={{ borderBottom: `1px solid ${tokens.slate[200]}`, mb: 2.5 }}>
+        <Tab value="overview" label="Overview" sx={{ textTransform: 'none', fontWeight: 600 }} />
+        {showsUnitsTab && <Tab value="units" label="Units" sx={{ textTransform: 'none', fontWeight: 600 }} />}
+        <Tab value="leases" label="Leases" sx={{ textTransform: 'none', fontWeight: 600 }} />
+        <Tab value="maintenance" label="Maintenance" sx={{ textTransform: 'none', fontWeight: 600 }} />
+        <Tab value="financials" label="Financials" sx={{ textTransform: 'none', fontWeight: 600 }} />
+      </Tabs>
 
-            <Box sx={{ borderTop: `1px solid ${tokens.slate[100]}`, mt: 3, pt: 2.5 }}>
-              <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
-                <Typography sx={{ fontSize: 13, fontWeight: 600, color: tokens.slate[700] }}>Amenities</Typography>
-              </Stack>
-              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                {property.amenities.map((a) => (
-                  <Chip key={a} label={a} size="small" variant="outlined" />
-                ))}
-                <Chip
-                  label="+ Add"
-                  size="small"
-                  variant="outlined"
-                  onClick={() => openEdit(2)}
-                  sx={{ borderStyle: 'dashed', borderColor: tokens.slate[300], color: tokens.slate[500], cursor: 'pointer' }}
-                />
+      {tab === 'overview' && (
+        <Stack direction={{ xs: 'column', md: 'row' }} spacing={2.5} sx={{ alignItems: 'flex-start' }}>
+          <Stack spacing={2.5} sx={{ flex: '2 1 480px', minWidth: 0, width: '100%' }}>
+            <Paper variant="outlined" sx={{ p: 3 }}>
+              <Typography sx={{ fontSize: 13, fontWeight: 600, color: tokens.slate[700], mb: 2 }}>Property details</Typography>
+              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, 1fr)' }, gap: 2 }}>
+                <Field label="Property type" value={property.type} />
+                <Field label="Address line 1" value={property.addressLine1} />
+                <Field label="Address line 2" value={property.addressLine2} />
+                <Field label="City" value={property.city} />
+                <Field label="State" value={property.stateProvince} />
+                <Field label="Postal code" value={property.postalCode} />
+                <Field label="Country" value={property.country} />
+                <Field label="Year built" value={property.yearBuilt ? String(property.yearBuilt) : ''} />
+                <Field label="Onboard date" value={property.onboardDate ? formatDate(property.onboardDate) : ''} />
               </Box>
-            </Box>
 
-            <Box sx={{ borderTop: `1px solid ${tokens.slate[100]}`, mt: 3, pt: 2.5 }}>
+              <Box sx={{ borderTop: `1px solid ${tokens.slate[100]}`, mt: 3, pt: 2.5 }}>
+                <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
+                  <Typography sx={{ fontSize: 13, fontWeight: 600, color: tokens.slate[700] }}>Amenities</Typography>
+                </Stack>
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                  {property.amenities.map((a) => (
+                    <Chip key={a} label={a} size="small" variant="outlined" />
+                  ))}
+                  <Chip
+                    label="+ Add"
+                    size="small"
+                    variant="outlined"
+                    onClick={() => openEdit(2)}
+                    sx={{ borderStyle: 'dashed', borderColor: tokens.slate[300], color: tokens.slate[500], cursor: 'pointer' }}
+                  />
+                </Box>
+              </Box>
+            </Paper>
+
+            {showsUnitsTab && <UnitsPreview units={units ?? []} onManage={() => setTab('units')} />}
+
+            <Paper variant="outlined" sx={{ p: 3 }}>
               <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
                 <Typography sx={{ fontSize: 13, fontWeight: 600, color: tokens.slate[700] }}>Internal notes</Typography>
                 <Link component="button" onClick={() => openEdit(3)} sx={{ fontSize: 12.5, fontWeight: 600 }}>
@@ -242,45 +296,59 @@ export function PropertyDetailScreen({ propertyId }: PropertyDetailScreenProps) 
               <Typography sx={{ fontSize: 13.5, color: property.notes ? tokens.slate[700] : tokens.slate[400], whiteSpace: 'pre-wrap' }}>
                 {property.notes || 'No internal notes yet.'}
               </Typography>
-            </Box>
-          </Paper>
+            </Paper>
+          </Stack>
 
-          {SHOWS_UNITS_SECTION[property.type] && <UnitsSection propertyId={propertyId} propertyName={property.name} />}
+          <Stack spacing={2.5} sx={{ flex: '1 1 260px', minWidth: 0, width: '100%' }}>
+            <Paper variant="outlined" sx={{ p: 3 }}>
+              <Typography sx={{ fontSize: 13, fontWeight: 600, color: tokens.slate[700], mb: 2 }}>Ownership</Typography>
+              <Stack spacing={1.5}>
+                <OwnershipRow label="Ownership" value={property.ownership === 'managed' ? 'Managed' : property.ownership === 'owned' ? 'Owned' : '—'} />
+                {property.ownership === 'managed' && <OwnershipRow label="Owner" value={property.ownerName || '—'} />}
+              </Stack>
+            </Paper>
+
+            <Paper variant="outlined" sx={{ p: 3 }}>
+              <Typography sx={{ fontSize: 13, fontWeight: 600, color: tokens.slate[700], mb: 1.5 }}>Quick actions</Typography>
+              <Stack spacing={1}>
+                {showsUnitsTab && <QuickActionRow icon={AddHomeOutlined} label="Add a unit" onClick={() => setTab('units')} />}
+                <QuickActionRow icon={AddHomeOutlined} label="Add a lease" onClick={() => setTab('leases')} />
+                <QuickActionRow icon={EditOutlined} label="Add a work order" onClick={() => setTab('maintenance')} />
+                <QuickActionRow icon={PaymentsOutlined} label="Record a payment" onClick={() => setTab('financials')} />
+              </Stack>
+            </Paper>
+
+            <Paper variant="outlined" sx={{ p: 3 }}>
+              <Typography sx={{ fontSize: 13, fontWeight: 600, color: tokens.slate[700], mb: 2.5 }}>Activity</Typography>
+              <ActivityTimeline
+                entries={[
+                  // Newest first, like any real changelog — and only
+                  // ever these two entries: created_at/updated_at are
+                  // the only timestamps this record keeps. A per-change
+                  // history (each edit as its own entry) would need a
+                  // real audit-log feature — there isn't one behind
+                  // this yet.
+                  ...(property.updatedAt !== property.createdAt
+                    ? [
+                        {
+                          icon: property.status === 'Archived' ? ArchiveOutlined : EditOutlined,
+                          label: property.status === 'Archived' ? 'Archived' : 'Last updated',
+                          iso: property.updatedAt,
+                        },
+                      ]
+                    : []),
+                  { icon: AddHomeOutlined, label: 'Property added', iso: property.createdAt },
+                ]}
+              />
+            </Paper>
+          </Stack>
         </Stack>
+      )}
 
-        <Stack spacing={2.5} sx={{ flex: '1 1 260px', minWidth: 0, width: '100%' }}>
-          <Paper variant="outlined" sx={{ p: 3 }}>
-            <Typography sx={{ fontSize: 13, fontWeight: 600, color: tokens.slate[700], mb: 2 }}>Ownership</Typography>
-            <Stack spacing={1.5}>
-              <OwnershipRow label="Ownership" value={property.ownership === 'managed' ? 'Managed' : property.ownership === 'owned' ? 'Owned' : '—'} />
-              {property.ownership === 'managed' && <OwnershipRow label="Owner" value={property.ownerName || '—'} />}
-            </Stack>
-          </Paper>
-
-          <Paper variant="outlined" sx={{ p: 3 }}>
-            <Typography sx={{ fontSize: 13, fontWeight: 600, color: tokens.slate[700], mb: 2.5 }}>Activity</Typography>
-            <ActivityTimeline
-              entries={[
-                // Newest first, like any real changelog — and only ever
-                // these two entries: created_at/updated_at are the only
-                // timestamps this record keeps. A per-change history
-                // (each edit as its own entry) would need a real
-                // audit-log feature — there isn't one behind this yet.
-                ...(property.updatedAt !== property.createdAt
-                  ? [
-                      {
-                        icon: property.status === 'Archived' ? ArchiveOutlined : EditOutlined,
-                        label: property.status === 'Archived' ? 'Archived' : 'Last updated',
-                        iso: property.updatedAt,
-                      },
-                    ]
-                  : []),
-                { icon: AddHomeOutlined, label: 'Property added', iso: property.createdAt },
-              ]}
-            />
-          </Paper>
-        </Stack>
-      </Stack>
+      {tab === 'units' && showsUnitsTab && <UnitsSection propertyId={propertyId} />}
+      {tab === 'leases' && <PropertyLeasesSection propertyId={propertyId} />}
+      {tab === 'maintenance' && <PropertyMaintenanceSection propertyId={propertyId} />}
+      {tab === 'financials' && <PropertyFinancialsSection property={property} />}
 
       <PropertyFormModal
         open={editOpen}
@@ -308,7 +376,7 @@ export function PropertyDetailScreen({ propertyId }: PropertyDetailScreenProps) 
   );
 }
 
-function StatTile({ label, value, secondary }: { label: string; value: string; secondary?: string }) {
+function StatTile({ label, value, secondary, children }: { label: string; value: string; secondary?: string; children?: React.ReactNode }) {
   return (
     <Paper variant="outlined" sx={{ p: 2, flex: '1 1 180px', minWidth: 160 }}>
       <Typography sx={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.04em', color: tokens.slate[500], textTransform: 'uppercase', mb: 0.5 }}>
@@ -316,6 +384,131 @@ function StatTile({ label, value, secondary }: { label: string; value: string; s
       </Typography>
       <Typography sx={{ fontSize: 18, fontWeight: 600, color: tokens.slate[900] }}>{value}</Typography>
       {secondary && <Typography sx={{ fontSize: 12, color: tokens.slate[400], mt: 0.25 }}>{secondary}</Typography>}
+      {children}
+    </Paper>
+  );
+}
+
+function OccupancyStatTile({ occupancyPct, tracked }: { occupancyPct: number; tracked: boolean }) {
+  const belowTarget = tracked && occupancyPct < OCCUPANCY_TARGET_PCT;
+  return (
+    <Paper variant="outlined" sx={{ p: 2, flex: '1 1 180px', minWidth: 160 }}>
+      <Typography sx={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.04em', color: tokens.slate[500], textTransform: 'uppercase', mb: 0.5 }}>
+        Occupancy
+      </Typography>
+      <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+        <Typography sx={{ fontSize: 18, fontWeight: 600, color: tokens.slate[900] }}>{tracked ? `${occupancyPct}%` : '—'}</Typography>
+        {belowTarget && <Chip label="Below target" size="small" sx={{ bgcolor: tokens.warningTint, color: tokens.warningInk, fontWeight: 600, height: 20, fontSize: 11 }} />}
+      </Stack>
+      {tracked ? (
+        <LinearProgress
+          variant="determinate"
+          value={Math.min(100, occupancyPct)}
+          sx={{
+            mt: 1,
+            height: 5,
+            borderRadius: 999,
+            bgcolor: tokens.slate[100],
+            '& .MuiLinearProgress-bar': { bgcolor: belowTarget ? tokens.warningInk : tokens.brand.green, borderRadius: 999 },
+          }}
+        />
+      ) : (
+        <Typography sx={{ fontSize: 12, color: tokens.slate[400], mt: 0.25 }}>Not tracked</Typography>
+      )}
+    </Paper>
+  );
+}
+
+function WorkOrdersStatTile({ open, overdue, onViewOverdue }: { open: number; overdue: { title: string; unitName: string }[]; onViewOverdue: () => void }) {
+  const firstOverdue = overdue[0];
+  return (
+    <Paper variant="outlined" sx={{ p: 2, flex: '1 1 180px', minWidth: 160 }}>
+      <Typography sx={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.04em', color: tokens.slate[500], textTransform: 'uppercase', mb: 0.5 }}>
+        Open work orders
+      </Typography>
+      <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+        <Typography sx={{ fontSize: 18, fontWeight: 600, color: tokens.slate[900] }}>{open}</Typography>
+        {overdue.length > 0 && (
+          <Chip
+            label="Overdue"
+            size="small"
+            onClick={onViewOverdue}
+            sx={{ bgcolor: 'rgba(194,38,47,0.1)', color: tokens.error, fontWeight: 600, height: 20, fontSize: 11, cursor: 'pointer' }}
+          />
+        )}
+      </Stack>
+      {firstOverdue ? (
+        <Link component="button" type="button" onClick={onViewOverdue} sx={{ fontSize: 12, mt: 0.25, display: 'block', textAlign: 'left' }}>
+          {firstOverdue.title} — {firstOverdue.unitName || 'Property-wide'}
+        </Link>
+      ) : (
+        <Typography sx={{ fontSize: 12, color: tokens.slate[400], mt: 0.25 }}>{open === 0 ? 'All clear' : 'None overdue'}</Typography>
+      )}
+    </Paper>
+  );
+}
+
+function QuickActionRow({ icon: Icon, label, onClick }: { icon: SvgIconComponent; label: string; onClick: () => void }) {
+  return (
+    <Link
+      component="button"
+      type="button"
+      onClick={onClick}
+      underline="none"
+      sx={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 1,
+        px: 1.25,
+        py: 1,
+        borderRadius: `${tokens.radiusControl}px`,
+        bgcolor: tokens.slate[50],
+        color: tokens.slate[700],
+        fontSize: 13,
+        fontWeight: 600,
+        textAlign: 'left',
+        width: '100%',
+        '&:hover': { bgcolor: tokens.slate[100] },
+      }}
+    >
+      <Icon sx={{ fontSize: 17, color: tokens.slate[500] }} />
+      {label}
+    </Link>
+  );
+}
+
+/** Read-only, compact preview of a property's units for the Overview tab — the full add/edit/bulk-add management UI lives on the Units tab (see UnitsSection); this just orients and links there. */
+function UnitsPreview({ units, onManage }: { units: UnitRow[]; onManage: () => void }) {
+  const preview = units.slice(0, 4);
+  return (
+    <Paper variant="outlined" sx={{ p: 3 }}>
+      <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between', mb: preview.length > 0 ? 1.5 : 0 }}>
+        <Typography sx={{ fontSize: 13, fontWeight: 600, color: tokens.slate[700] }}>Units</Typography>
+        <Link component="button" type="button" onClick={onManage} sx={{ fontSize: 12.5, fontWeight: 600 }}>
+          Manage units →
+        </Link>
+      </Stack>
+      {preview.length === 0 ? (
+        <Typography sx={{ fontSize: 13, color: tokens.slate[400] }}>No units yet.</Typography>
+      ) : (
+        <Stack divider={<Box sx={{ borderTop: `1px solid ${tokens.slate[100]}` }} />}>
+          {preview.map((u) => (
+            <Stack key={u.id} direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between', py: 1 }}>
+              <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+                <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: u.status === 'occupied' ? tokens.brand.green : tokens.slate[300] }} />
+                <Typography sx={{ fontSize: 13, fontWeight: 600, color: tokens.slate[700] }}>{u.unitName}</Typography>
+              </Stack>
+              {u.status === 'occupied' && u.currentRent != null ? (
+                <Typography sx={{ fontSize: 13, color: tokens.slate[600] }}>{currency.format(u.currentRent)}</Typography>
+              ) : u.status === 'vacant' ? (
+                <Typography sx={{ fontSize: 12.5, color: tokens.error }}>{u.vacatedAt ? `Vacant · ${daysSince(u.vacatedAt)} days` : 'Vacant'}</Typography>
+              ) : (
+                <Typography sx={{ fontSize: 12.5, color: tokens.slate[500] }}>—</Typography>
+              )}
+            </Stack>
+          ))}
+        </Stack>
+      )}
     </Paper>
   );
 }

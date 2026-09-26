@@ -14,7 +14,7 @@ import VisibilityOutlined from '@mui/icons-material/VisibilityOutlined';
 import BlockOutlined from '@mui/icons-material/BlockOutlined';
 import InfoOutlined from '@mui/icons-material/InfoOutlined';
 import { tokens } from '@/app/tokens';
-import { useUsersRolesStore } from '../store/useUsersRolesStore';
+import { useStaff } from '../hooks/useStaffQueries';
 import { PERMISSION_MATRIX, ROLE_DESCRIPTIONS, ROLE_LABELS, STAFF_ROLES, type PermissionLevel } from '../types';
 
 const LEVEL_META: Record<PermissionLevel, { label: string; color: string; icon: typeof CheckCircleOutlined }> = {
@@ -24,9 +24,9 @@ const LEVEL_META: Record<PermissionLevel, { label: string; color: string; icon: 
   none: { label: 'No access', color: tokens.slate[300], icon: BlockOutlined },
 };
 
-/** Read-only summary of what each role can do — the matrix mirrors what the backend's role middleware would enforce if it were wired to any route (it isn't yet), so the note below is load-bearing, not boilerplate. */
+/** Read-only summary of what each role can do. Property scoping (the "Always all properties" / "Scoped to assigned properties" line on each role card) is enforced server-side on every property/unit/lease/work-order request. The module-level Full/Edit/View/No-access matrix below is still a reference only — no route checks it yet — so the note below the table is load-bearing, not boilerplate. */
 export function RolesPermissionsTab() {
-  const users = useUsersRolesStore((s) => s.users);
+  const { data: users = [] } = useStaff();
   const activeCount = (role: (typeof STAFF_ROLES)[number]) => users.filter((u) => u.role === role && u.status !== 'deactivated').length;
 
   return (
@@ -89,8 +89,8 @@ export function RolesPermissionsTab() {
 
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mt: 1.5 }}>
         <InfoOutlined sx={{ fontSize: 15, color: tokens.slate[400] }} />
-        <Tooltip title="This matrix is a summary for staff to reference — the API independently checks every request's role before it touches data.">
-          <Typography sx={{ fontSize: 12, color: tokens.slate[500] }}>Access is enforced server-side too — this matrix is a summary.</Typography>
+        <Tooltip title="Property scoping is enforced server-side: a staff member scoped to specific properties gets a 404 on any property/unit/lease/work order outside that scope, on every request. Which module actions (Full/Edit/View/No access) a role gets is not yet checked by the API — this matrix is a reference for that part only.">
+          <Typography sx={{ fontSize: 12, color: tokens.slate[500] }}>Property scoping is enforced server-side. This module matrix is still a reference.</Typography>
         </Tooltip>
       </Box>
     </Box>

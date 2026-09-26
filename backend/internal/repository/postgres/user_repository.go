@@ -29,19 +29,21 @@ const uniqueViolationCode = "23505"
 
 const userColumns = `
 	id, email, name, password_hash, role, account_owner_id, staff_role, status, all_properties,
-	invited_by, invited_at, invite_expires_at, invite_token_hash, last_login_at, created_at, updated_at`
+	invited_by, invited_at, invite_expires_at, invite_token_hash, last_login_at, created_at, updated_at,
+	password_reset_token_hash, password_reset_expires_at`
 
 func scanUser(row rowScanner) (*domain.User, error) {
 	var u domain.User
 	var role, status string
 	var staffRole sql.NullString
 	var accountOwner, invitedBy uuid.NullUUID
-	var invitedAt, inviteExpiresAt, lastLoginAt sql.NullTime
-	var inviteTokenHash sql.NullString
+	var invitedAt, inviteExpiresAt, lastLoginAt, passwordResetExpiresAt sql.NullTime
+	var inviteTokenHash, passwordResetTokenHash sql.NullString
 
 	if err := row.Scan(
 		&u.ID, &u.Email, &u.Name, &u.PasswordHash, &role, &accountOwner, &staffRole, &status, &u.AllProperties,
 		&invitedBy, &invitedAt, &inviteExpiresAt, &inviteTokenHash, &lastLoginAt, &u.CreatedAt, &u.UpdatedAt,
+		&passwordResetTokenHash, &passwordResetExpiresAt,
 	); err != nil {
 		return nil, err
 	}
@@ -59,6 +61,10 @@ func scanUser(row rowScanner) (*domain.User, error) {
 	if inviteTokenHash.Valid {
 		u.InviteTokenHash = inviteTokenHash.String
 	}
+	if passwordResetTokenHash.Valid {
+		u.PasswordResetTokenHash = passwordResetTokenHash.String
+	}
+	u.PasswordResetExpiresAt = nullTimePtr(passwordResetExpiresAt)
 	return &u, nil
 }
 

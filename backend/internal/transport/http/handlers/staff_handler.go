@@ -12,9 +12,9 @@ import (
 )
 
 // StaffHandler serves the authenticated staff-management endpoints
-// (/staff/*), gated by middleware.RequireAccountAdmin. InviteHandler
-// (below) serves the public accept-invite endpoints an invite email
-// links to, before the recipient has a password to authenticate with.
+// (/staff/*), gated by middleware.RequireAccountAdmin. PublicStaffHandler
+// (below) serves the public endpoints an invite or password-reset email
+// links to, before the recipient has signed in.
 type StaffHandler struct {
 	svc domain.StaffService
 }
@@ -60,8 +60,13 @@ func (h *StaffHandler) Invite(w http.ResponseWriter, r *http.Request) {
 	}
 	now := time.Now().UTC()
 	if result.Conflict != nil {
+		// 200, not 409: this is a normal outcome the client branches on
+		// (offer Resend/Reactivate), not an HTTP-level failure — the
+		// envelope already carries Conflict vs Member for that. A 4xx
+		// here would route this success-shaped body through the
+		// frontend's generic error path instead, discarding it.
 		conflict := dto.NewStaffMemberResponse(result.Conflict, now, claims.ActorID)
-		response.JSON(w, http.StatusConflict, dto.InviteResultResponse{Conflict: &conflict})
+		response.JSON(w, http.StatusOK, dto.InviteResultResponse{Conflict: &conflict})
 		return
 	}
 	member := dto.NewStaffMemberResponse(result.Created, now, claims.ActorID)
@@ -152,6 +157,25 @@ func (h *StaffHandler) ResendInvite(w http.ResponseWriter, r *http.Request) {
 	response.JSON(w, http.StatusOK, map[string]string{"invite_url": url})
 }
 
+func (h *StaffHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.ClaimsFromContext(r.Context())
+	if !ok {
+		response.WriteError(w, r, fmt.Errorf("reset password: %w", domain.ErrUnauthorized))
+		return
+	}
+	id, err := uuidURLParam(r, "id")
+	if err != nil {
+		response.WriteError(w, r, err)
+		return
+	}
+	url, err := h.svc.ResetPassword(r.Context(), claims.UserID, claims.ActorID, id)
+	if err != nil {
+		response.WriteError(w, r, err)
+		return
+	}
+	response.JSON(w, http.StatusOK, map[string]string{"reset_url": url})
+}
+
 func (h *StaffHandler) AuditLog(w http.ResponseWriter, r *http.Request) {
 	claims, ok := middleware.ClaimsFromContext(r.Context())
 	if !ok {
@@ -167,17 +191,18 @@ func (h *StaffHandler) AuditLog(w http.ResponseWriter, r *http.Request) {
 	response.JSONWithMeta(w, http.StatusOK, dto.NewStaffAuditListResponse(entries), dto.AccountingListMeta{Total: total, Limit: limit, Offset: offset})
 }
 
-// InviteHandler serves the two unauthenticated endpoints an invite
-// email links to — reached before the recipient has any credentials.
-type InviteHandler struct {
+// PublicStaffHandler serves the unauthenticated endpoints an invite or
+// password-reset email links to — reached before the recipient has any
+// credentials (or, for a reset, before they can use their old ones).
+type PublicStaffHandler struct {
 	svc domain.StaffService
 }
 
-func NewInviteHandler(svc domain.StaffService) *InviteHandler {
-	return &InviteHandler{svc: svc}
+func NewPublicStaffHandler(svc domain.StaffService) *PublicStaffHandler {
+	return &PublicStaffHandler{svc: svc}
 }
 
-func (h *InviteHandler) Lookup(w http.ResponseWriter, r *http.Request) {
+func (h *PublicStaffHandler) LookupInvite(w http.ResponseWriter, r *http.Request) {
 	token := r.URL.Query().Get("token")
 	lookup, err := h.svc.LookupInvite(r.Context(), token)
 	if err != nil {
@@ -187,13 +212,36 @@ func (h *InviteHandler) Lookup(w http.ResponseWriter, r *http.Request) {
 	response.JSON(w, http.StatusOK, dto.NewInviteLookupResponse(lookup))
 }
 
-func (h *InviteHandler) Accept(w http.ResponseWriter, r *http.Request) {
+func (h *PublicStaffHandler) AcceptInvite(w http.ResponseWriter, r *http.Request) {
 	var req dto.AcceptInviteRequest
 	if err := decodeAndValidate(r, &req); err != nil {
 		response.WriteError(w, r, err)
 		return
 	}
 	if err := h.svc.AcceptInvite(r.Context(), domain.AcceptInviteInput{Token: req.Token, Password: req.Password}); err != nil {
+		response.WriteError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *PublicStaffHandler) LookupPasswordReset(w http.ResponseWriter, r *http.Request) {
+	token := r.URL.Query().Get("token")
+	lookup, err := h.svc.LookupPasswordReset(r.Context(), token)
+	if err != nil {
+		response.WriteError(w, r, err)
+		return
+	}
+	response.JSON(w, http.StatusOK, dto.NewPasswordResetLookupResponse(lookup))
+}
+
+func (h *PublicStaffHandler) ConfirmPasswordReset(w http.ResponseWriter, r *http.Request) {
+	var req dto.ConfirmPasswordResetRequest
+	if err := decodeAndValidate(r, &req); err != nil {
+		response.WriteError(w, r, err)
+		return
+	}
+	if err := h.svc.ConfirmPasswordReset(r.Context(), domain.ConfirmPasswordResetInput{Token: req.Token, Password: req.Password}); err != nil {
 		response.WriteError(w, r, err)
 		return
 	}

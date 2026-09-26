@@ -32,7 +32,14 @@ export function LeasesScreen() {
   const [searchParams] = useSearchParams();
 
   const [search, setSearch] = useState('');
-  const [propertyFilter, setPropertyFilter] = useState('');
+  // Seeded once from ?property=<id> — a property detail page's "View in
+  // Leases" link lands here with, same pattern as UnitsScreen.
+  const [propertyFilter, setPropertyFilter] = useState(searchParams.get('property') ?? '');
+  // Seeded once from ?unit=<id> — a unit detail page's Lease History
+  // "View in Leases" link lands here with. No toolbar control for it
+  // (unlike propertyFilter above): it's a cross-link landing filter,
+  // not something a user picks from this page.
+  const [unitFilter] = useState(searchParams.get('unit') ?? '');
   // Seeded once from ?status=expiring_soon — the Dashboard's "Leases
   // Expiring Soon" View all link lands here with.
   const [statusFilter, setStatusFilter] = useState<LeaseDisplayStatus | ''>(
@@ -59,6 +66,7 @@ export function LeasesScreen() {
   const { data, isLoading, isError, error, refetch } = useLeasesPortfolio({
     search: search || undefined,
     propertyId: propertyFilter || undefined,
+    unitId: unitFilter || undefined,
     status: statusFilter || undefined,
     sort: sortKey,
     order: sortDir,
@@ -68,7 +76,7 @@ export function LeasesScreen() {
 
   const leases = data?.leases ?? [];
   const total = data?.total ?? 0;
-  const isFiltered = Boolean(search || propertyFilter || statusFilter);
+  const isFiltered = Boolean(search || propertyFilter || unitFilter || statusFilter);
   const emptyState: LeasesPortfolioEmptyState =
     isLoading || total > 0 ? { kind: 'none' } : isFiltered ? { kind: 'filtered' } : { kind: 'first-time' };
 

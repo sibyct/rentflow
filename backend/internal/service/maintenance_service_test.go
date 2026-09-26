@@ -63,7 +63,7 @@ func (f *fakeWorkOrderRepository) Delete(_ context.Context, id uuid.UUID) error 
 	return nil
 }
 
-func (f *fakeWorkOrderRepository) BulkUpdateStatus(_ context.Context, _ uuid.UUID, ids []uuid.UUID, status domain.WorkOrderStatus) (int, error) {
+func (f *fakeWorkOrderRepository) BulkUpdateStatus(_ context.Context, _ uuid.UUID, ids []uuid.UUID, status domain.WorkOrderStatus, _ domain.PropertyAccess) (int, error) {
 	n := 0
 	for _, id := range ids {
 		if w, ok := f.orders[id]; ok {
@@ -74,7 +74,7 @@ func (f *fakeWorkOrderRepository) BulkUpdateStatus(_ context.Context, _ uuid.UUI
 	return n, nil
 }
 
-func (f *fakeWorkOrderRepository) BulkReassign(_ context.Context, _ uuid.UUID, ids []uuid.UUID, assignedTo string) (int, error) {
+func (f *fakeWorkOrderRepository) BulkReassign(_ context.Context, _ uuid.UUID, ids []uuid.UUID, assignedTo string, _ domain.PropertyAccess) (int, error) {
 	n := 0
 	for _, id := range ids {
 		if w, ok := f.orders[id]; ok {
@@ -316,7 +316,7 @@ func TestWorkOrderService_CreateWorkOrder(t *testing.T) {
 	t.Run("valid input creates a work order with default status and priority", func(t *testing.T) {
 		f := setupWorkOrderTest(t)
 
-		got, err := f.svc.CreateWorkOrder(context.Background(), f.ownerID, validCreateWorkOrderInput(f.property.ID))
+		got, err := f.svc.CreateWorkOrder(context.Background(), f.ownerID, validCreateWorkOrderInput(f.property.ID), domain.AllPropertyAccess())
 		if err != nil {
 			t.Fatalf("CreateWorkOrder() unexpected error = %v", err)
 		}
@@ -331,7 +331,7 @@ func TestWorkOrderService_CreateWorkOrder(t *testing.T) {
 	t.Run("property belongs to a different owner reads as not found", func(t *testing.T) {
 		f := setupWorkOrderTest(t)
 
-		_, err := f.svc.CreateWorkOrder(context.Background(), uuid.New(), validCreateWorkOrderInput(f.property.ID))
+		_, err := f.svc.CreateWorkOrder(context.Background(), uuid.New(), validCreateWorkOrderInput(f.property.ID), domain.AllPropertyAccess())
 		if !errors.Is(err, domain.ErrNotFound) {
 			t.Fatalf("CreateWorkOrder() error = %v, want %v", err, domain.ErrNotFound)
 		}
@@ -347,7 +347,7 @@ func TestWorkOrderService_CreateWorkOrder(t *testing.T) {
 
 		input := validCreateWorkOrderInput(f.property.ID)
 		input.UnitID = &otherUnit.ID
-		_, err := f.svc.CreateWorkOrder(context.Background(), f.ownerID, input)
+		_, err := f.svc.CreateWorkOrder(context.Background(), f.ownerID, input, domain.AllPropertyAccess())
 		var verrs domain.ValidationErrors
 		if !errors.As(err, &verrs) || !hasField(verrs, "unit_id") {
 			t.Fatalf("CreateWorkOrder() error = %v, want a ValidationErrors failure for field %q", err, "unit_id")
@@ -359,7 +359,7 @@ func TestWorkOrderService_CreateWorkOrder(t *testing.T) {
 
 		input := validCreateWorkOrderInput(f.property.ID)
 		input.Priority = domain.WorkOrderPriorityEmergency
-		_, err := f.svc.CreateWorkOrder(context.Background(), f.ownerID, input)
+		_, err := f.svc.CreateWorkOrder(context.Background(), f.ownerID, input, domain.AllPropertyAccess())
 		var verrs domain.ValidationErrors
 		if !errors.As(err, &verrs) || !hasField(verrs, "due_date") {
 			t.Fatalf("CreateWorkOrder() error = %v, want a ValidationErrors failure for field %q", err, "due_date")
@@ -373,7 +373,7 @@ func TestWorkOrderService_CreateWorkOrder(t *testing.T) {
 		input := validCreateWorkOrderInput(f.property.ID)
 		input.Priority = domain.WorkOrderPriorityEmergency
 		input.DueDate = &tooLate
-		_, err := f.svc.CreateWorkOrder(context.Background(), f.ownerID, input)
+		_, err := f.svc.CreateWorkOrder(context.Background(), f.ownerID, input, domain.AllPropertyAccess())
 		var verrs domain.ValidationErrors
 		if !errors.As(err, &verrs) || !hasField(verrs, "due_date") {
 			t.Fatalf("CreateWorkOrder() error = %v, want a ValidationErrors failure for field %q", err, "due_date")
@@ -387,7 +387,7 @@ func TestWorkOrderService_CreateWorkOrder(t *testing.T) {
 		input := validCreateWorkOrderInput(f.property.ID)
 		input.Priority = domain.WorkOrderPriorityEmergency
 		input.DueDate = &soon
-		if _, err := f.svc.CreateWorkOrder(context.Background(), f.ownerID, input); err != nil {
+		if _, err := f.svc.CreateWorkOrder(context.Background(), f.ownerID, input, domain.AllPropertyAccess()); err != nil {
 			t.Fatalf("CreateWorkOrder() unexpected error = %v", err)
 		}
 	})
@@ -399,7 +399,7 @@ func TestWorkOrderService_CreateWorkOrder(t *testing.T) {
 
 		input := validCreateWorkOrderInput(f.property.ID)
 		input.VendorID = &vendor.ID
-		got, err := f.svc.CreateWorkOrder(context.Background(), f.ownerID, input)
+		got, err := f.svc.CreateWorkOrder(context.Background(), f.ownerID, input, domain.AllPropertyAccess())
 		if err != nil {
 			t.Fatalf("CreateWorkOrder() unexpected error = %v", err)
 		}
@@ -418,7 +418,7 @@ func TestWorkOrderService_CreateWorkOrder(t *testing.T) {
 
 		input := validCreateWorkOrderInput(f.property.ID)
 		input.VendorID = &vendor.ID
-		_, err := f.svc.CreateWorkOrder(context.Background(), f.ownerID, input)
+		_, err := f.svc.CreateWorkOrder(context.Background(), f.ownerID, input, domain.AllPropertyAccess())
 		if !errors.Is(err, domain.ErrNotFound) {
 			t.Fatalf("CreateWorkOrder() error = %v, want %v", err, domain.ErrNotFound)
 		}
@@ -430,7 +430,7 @@ func TestWorkOrderService_CreateWorkOrder(t *testing.T) {
 
 		input := validCreateWorkOrderInput(f.property.ID)
 		input.PhotoAttachmentID = &photoID
-		got, err := f.svc.CreateWorkOrder(context.Background(), f.ownerID, input)
+		got, err := f.svc.CreateWorkOrder(context.Background(), f.ownerID, input, domain.AllPropertyAccess())
 		if err != nil {
 			t.Fatalf("CreateWorkOrder() unexpected error = %v", err)
 		}
@@ -445,7 +445,7 @@ func TestWorkOrderService_CreateWorkOrder(t *testing.T) {
 
 		input := validCreateWorkOrderInput(f.property.ID)
 		input.InvoiceAttachmentID = &invoiceID
-		_, err := f.svc.CreateWorkOrder(context.Background(), f.ownerID, input)
+		_, err := f.svc.CreateWorkOrder(context.Background(), f.ownerID, input, domain.AllPropertyAccess())
 		var verrs domain.ValidationErrors
 		if !errors.As(err, &verrs) || !hasField(verrs, "invoice_attachment_id") {
 			t.Fatalf("CreateWorkOrder() error = %v, want a ValidationErrors failure for field %q", err, "invoice_attachment_id")
@@ -453,17 +453,52 @@ func TestWorkOrderService_CreateWorkOrder(t *testing.T) {
 	})
 }
 
+func TestWorkOrderService_GetWorkOrder(t *testing.T) {
+	f := setupWorkOrderTest(t)
+
+	created, err := f.svc.CreateWorkOrder(context.Background(), f.ownerID, validCreateWorkOrderInput(f.property.ID), domain.AllPropertyAccess())
+	if err != nil {
+		t.Fatalf("CreateWorkOrder() unexpected error = %v", err)
+	}
+
+	t.Run("belongs to a different owner", func(t *testing.T) {
+		_, err := f.svc.GetWorkOrder(context.Background(), created.ID, uuid.New(), domain.AllPropertyAccess())
+		if !errors.Is(err, domain.ErrNotFound) {
+			t.Fatalf("GetWorkOrder() error = %v, want %v", err, domain.ErrNotFound)
+		}
+	})
+
+	// Property-scope enforcement (Piece 1): a staff member scoped away
+	// from this work order's property must read it as not-found.
+	t.Run("owned but outside scoped access", func(t *testing.T) {
+		_, err := f.svc.GetWorkOrder(context.Background(), created.ID, f.ownerID, domain.PropertyAccess{PropertyIDs: []uuid.UUID{uuid.New()}})
+		if !errors.Is(err, domain.ErrNotFound) {
+			t.Fatalf("GetWorkOrder() error = %v, want %v", err, domain.ErrNotFound)
+		}
+	})
+
+	t.Run("owned and within scoped access", func(t *testing.T) {
+		got, err := f.svc.GetWorkOrder(context.Background(), created.ID, f.ownerID, domain.PropertyAccess{PropertyIDs: []uuid.UUID{f.property.ID}})
+		if err != nil {
+			t.Fatalf("GetWorkOrder() unexpected error = %v", err)
+		}
+		if got.ID != created.ID {
+			t.Errorf("GetWorkOrder() id = %v, want %v", got.ID, created.ID)
+		}
+	})
+}
+
 func TestWorkOrderService_UpdateWorkOrder(t *testing.T) {
 	f := setupWorkOrderTest(t)
 
-	created, err := f.svc.CreateWorkOrder(context.Background(), f.ownerID, validCreateWorkOrderInput(f.property.ID))
+	created, err := f.svc.CreateWorkOrder(context.Background(), f.ownerID, validCreateWorkOrderInput(f.property.ID), domain.AllPropertyAccess())
 	if err != nil {
 		t.Fatalf("CreateWorkOrder() unexpected error = %v", err)
 	}
 
 	t.Run("status change logs activity and sets completed_at", func(t *testing.T) {
 		completed := domain.WorkOrderStatusCompleted
-		got, err := f.svc.UpdateWorkOrder(context.Background(), created.ID, f.ownerID, domain.UpdateWorkOrderInput{Status: &completed})
+		got, err := f.svc.UpdateWorkOrder(context.Background(), created.ID, f.ownerID, domain.UpdateWorkOrderInput{Status: &completed}, domain.AllPropertyAccess())
 		if err != nil {
 			t.Fatalf("UpdateWorkOrder() unexpected error = %v", err)
 		}
@@ -488,7 +523,7 @@ func TestWorkOrderService_UpdateWorkOrder(t *testing.T) {
 
 	t.Run("belongs to a different owner", func(t *testing.T) {
 		title := "Different title"
-		_, err := f.svc.UpdateWorkOrder(context.Background(), created.ID, uuid.New(), domain.UpdateWorkOrderInput{Title: &title})
+		_, err := f.svc.UpdateWorkOrder(context.Background(), created.ID, uuid.New(), domain.UpdateWorkOrderInput{Title: &title}, domain.AllPropertyAccess())
 		if !errors.Is(err, domain.ErrNotFound) {
 			t.Fatalf("UpdateWorkOrder() error = %v, want %v", err, domain.ErrNotFound)
 		}
@@ -498,7 +533,7 @@ func TestWorkOrderService_UpdateWorkOrder(t *testing.T) {
 		vendor := &domain.Vendor{ID: uuid.New(), OwnerID: f.ownerID, CompanyName: "Ace Plumbing", Phone: "555-0100"}
 		f.vendorRepo.vendors[vendor.ID] = vendor
 
-		got, err := f.svc.UpdateWorkOrder(context.Background(), created.ID, f.ownerID, domain.UpdateWorkOrderInput{VendorID: &vendor.ID, VendorIDSet: true})
+		got, err := f.svc.UpdateWorkOrder(context.Background(), created.ID, f.ownerID, domain.UpdateWorkOrderInput{VendorID: &vendor.ID, VendorIDSet: true}, domain.AllPropertyAccess())
 		if err != nil {
 			t.Fatalf("UpdateWorkOrder() unexpected error = %v", err)
 		}
@@ -514,7 +549,7 @@ func TestWorkOrderService_UpdateWorkOrder(t *testing.T) {
 		vendor := &domain.Vendor{ID: uuid.New(), OwnerID: uuid.New(), CompanyName: "Someone Else's Vendor"}
 		f.vendorRepo.vendors[vendor.ID] = vendor
 
-		_, err := f.svc.UpdateWorkOrder(context.Background(), created.ID, f.ownerID, domain.UpdateWorkOrderInput{VendorID: &vendor.ID, VendorIDSet: true})
+		_, err := f.svc.UpdateWorkOrder(context.Background(), created.ID, f.ownerID, domain.UpdateWorkOrderInput{VendorID: &vendor.ID, VendorIDSet: true}, domain.AllPropertyAccess())
 		if !errors.Is(err, domain.ErrNotFound) {
 			t.Fatalf("UpdateWorkOrder() error = %v, want %v", err, domain.ErrNotFound)
 		}
@@ -522,7 +557,7 @@ func TestWorkOrderService_UpdateWorkOrder(t *testing.T) {
 
 	t.Run("rating out of range is rejected", func(t *testing.T) {
 		bad := 6
-		_, err := f.svc.UpdateWorkOrder(context.Background(), created.ID, f.ownerID, domain.UpdateWorkOrderInput{Rating: &bad})
+		_, err := f.svc.UpdateWorkOrder(context.Background(), created.ID, f.ownerID, domain.UpdateWorkOrderInput{Rating: &bad}, domain.AllPropertyAccess())
 		var verrs domain.ValidationErrors
 		if !errors.As(err, &verrs) || !hasField(verrs, "rating") {
 			t.Fatalf("UpdateWorkOrder() error = %v, want a ValidationErrors failure for field %q", err, "rating")
@@ -534,7 +569,7 @@ func TestWorkOrderService_UpdateWorkOrder(t *testing.T) {
 
 		got, err := f.svc.UpdateWorkOrder(context.Background(), created.ID, f.ownerID, domain.UpdateWorkOrderInput{
 			PhotoAttachmentID: &photoID, PhotoAttachmentIDSet: true,
-		})
+		}, domain.AllPropertyAccess())
 		if err != nil {
 			t.Fatalf("UpdateWorkOrder() unexpected error = %v", err)
 		}
@@ -542,7 +577,7 @@ func TestWorkOrderService_UpdateWorkOrder(t *testing.T) {
 			t.Fatalf("UpdateWorkOrder() photo_attachment_id = %v, want %v", got.PhotoAttachmentID, photoID)
 		}
 
-		got, err = f.svc.UpdateWorkOrder(context.Background(), created.ID, f.ownerID, domain.UpdateWorkOrderInput{PhotoAttachmentIDSet: true})
+		got, err = f.svc.UpdateWorkOrder(context.Background(), created.ID, f.ownerID, domain.UpdateWorkOrderInput{PhotoAttachmentIDSet: true}, domain.AllPropertyAccess())
 		if err != nil {
 			t.Fatalf("UpdateWorkOrder() unexpected error = %v", err)
 		}
@@ -553,7 +588,7 @@ func TestWorkOrderService_UpdateWorkOrder(t *testing.T) {
 
 	t.Run("valid rating is persisted", func(t *testing.T) {
 		good := 5
-		got, err := f.svc.UpdateWorkOrder(context.Background(), created.ID, f.ownerID, domain.UpdateWorkOrderInput{Rating: &good})
+		got, err := f.svc.UpdateWorkOrder(context.Background(), created.ID, f.ownerID, domain.UpdateWorkOrderInput{Rating: &good}, domain.AllPropertyAccess())
 		if err != nil {
 			t.Fatalf("UpdateWorkOrder() unexpected error = %v", err)
 		}
@@ -566,13 +601,13 @@ func TestWorkOrderService_UpdateWorkOrder(t *testing.T) {
 func TestWorkOrderService_DeleteWorkOrder(t *testing.T) {
 	f := setupWorkOrderTest(t)
 
-	created, err := f.svc.CreateWorkOrder(context.Background(), f.ownerID, validCreateWorkOrderInput(f.property.ID))
+	created, err := f.svc.CreateWorkOrder(context.Background(), f.ownerID, validCreateWorkOrderInput(f.property.ID), domain.AllPropertyAccess())
 	if err != nil {
 		t.Fatalf("CreateWorkOrder() unexpected error = %v", err)
 	}
 
 	t.Run("belongs to a different owner", func(t *testing.T) {
-		if err := f.svc.DeleteWorkOrder(context.Background(), created.ID, uuid.New()); !errors.Is(err, domain.ErrNotFound) {
+		if err := f.svc.DeleteWorkOrder(context.Background(), created.ID, uuid.New(), domain.AllPropertyAccess()); !errors.Is(err, domain.ErrNotFound) {
 			t.Fatalf("DeleteWorkOrder() error = %v, want %v", err, domain.ErrNotFound)
 		}
 		if _, ok := f.workOrderRepo.orders[created.ID]; !ok {
@@ -580,7 +615,7 @@ func TestWorkOrderService_DeleteWorkOrder(t *testing.T) {
 		}
 	})
 
-	if err := f.svc.DeleteWorkOrder(context.Background(), created.ID, f.ownerID); err != nil {
+	if err := f.svc.DeleteWorkOrder(context.Background(), created.ID, f.ownerID, domain.AllPropertyAccess()); err != nil {
 		t.Fatalf("DeleteWorkOrder() unexpected error = %v", err)
 	}
 }

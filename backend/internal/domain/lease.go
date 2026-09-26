@@ -156,6 +156,8 @@ type Lease struct {
 	LateFeeAmount         *float64
 	LateFeeGraceDays      *int
 	PrimaryResidentName   string
+	PrimaryResidentPhone  string
+	PrimaryResidentEmail  string
 	CoResidents           []string
 	EmergencyContact      string
 	RenewalStatus         RenewalStatus
@@ -202,23 +204,25 @@ func truncateToDate(t time.Time) time.Time {
 }
 
 type CreateLeaseInput struct {
-	UnitID              uuid.UUID
-	Type                LeaseType
-	Status              LeaseStatus
-	StartDate           time.Time
-	EndDate             *time.Time
-	MoveInDate          *time.Time
-	MoveOutDate         *time.Time
-	MonthlyRent         float64
-	SecurityDeposit     *float64
-	DepositStatus       *DepositStatus
-	RentDueDay          *int
-	LateFeeAmount       *float64
-	LateFeeGraceDays    *int
-	PrimaryResidentName string
-	CoResidents         []string
-	EmergencyContact    string
-	Notes               string
+	UnitID               uuid.UUID
+	Type                 LeaseType
+	Status               LeaseStatus
+	StartDate            time.Time
+	EndDate              *time.Time
+	MoveInDate           *time.Time
+	MoveOutDate          *time.Time
+	MonthlyRent          float64
+	SecurityDeposit      *float64
+	DepositStatus        *DepositStatus
+	RentDueDay           *int
+	LateFeeAmount        *float64
+	LateFeeGraceDays     *int
+	PrimaryResidentName  string
+	PrimaryResidentPhone string
+	PrimaryResidentEmail string
+	CoResidents          []string
+	EmergencyContact     string
+	Notes                string
 }
 
 // UpdateLeaseInput fields are all optional (nil = leave unchanged) —
@@ -237,6 +241,8 @@ type UpdateLeaseInput struct {
 	LateFeeAmount         *float64
 	LateFeeGraceDays      *int
 	PrimaryResidentName   *string
+	PrimaryResidentPhone  *string
+	PrimaryResidentEmail  *string
 	CoResidents           []string
 	EmergencyContact      *string
 	RenewalStatus         *RenewalStatus
@@ -278,12 +284,13 @@ type LeaseListFilter struct {
 }
 
 type LeaseListOptions struct {
-	OwnerID  uuid.UUID
-	Filter   LeaseListFilter
-	Sort     LeaseSortKey
-	SortDesc bool
-	Limit    int
-	Offset   int
+	OwnerID        uuid.UUID
+	PropertyAccess PropertyAccess
+	Filter         LeaseListFilter
+	Sort           LeaseSortKey
+	SortDesc       bool
+	Limit          int
+	Offset         int
 }
 
 // LeaseWithUnitProperty decorates a Lease with its unit's and parent
@@ -322,12 +329,12 @@ type LeaseRepository interface {
 // property belongs to someone else — the same IDOR-safe contract as
 // PropertyService and UnitService.
 type LeaseService interface {
-	CreateLease(ctx context.Context, ownerID uuid.UUID, input CreateLeaseInput) (*Lease, error)
+	CreateLease(ctx context.Context, ownerID uuid.UUID, input CreateLeaseInput, access PropertyAccess) (*Lease, error)
 	// GetLease returns the unit/property-decorated shape (unlike Create,
 	// whose caller already knows both from the URL it posted to) since a
 	// lease detail view needs to show which unit and property it's for.
-	GetLease(ctx context.Context, id, ownerID uuid.UUID) (*LeaseWithUnitProperty, error)
+	GetLease(ctx context.Context, id, ownerID uuid.UUID, access PropertyAccess) (*LeaseWithUnitProperty, error)
 	ListLeasesForOwner(ctx context.Context, ownerID uuid.UUID, opts LeaseListOptions) ([]*LeaseWithUnitProperty, int, error)
-	UpdateLease(ctx context.Context, id, ownerID uuid.UUID, input UpdateLeaseInput) (*Lease, error)
-	DeleteLease(ctx context.Context, id, ownerID uuid.UUID) error
+	UpdateLease(ctx context.Context, id, ownerID uuid.UUID, input UpdateLeaseInput, access PropertyAccess) (*Lease, error)
+	DeleteLease(ctx context.Context, id, ownerID uuid.UUID, access PropertyAccess) error
 }

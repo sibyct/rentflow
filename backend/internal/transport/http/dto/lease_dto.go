@@ -12,26 +12,30 @@ import (
 const leaseDateLayout = "2006-01-02"
 
 type CreateLeaseRequest struct {
-	LeaseType           string   `json:"lease_type" validate:"required,oneof=fixed month_to_month"`
-	Status              string   `json:"status" validate:"omitempty,oneof=draft active terminated"`
-	StartDate           string   `json:"start_date" validate:"required,datetime=2006-01-02"`
-	EndDate             string   `json:"end_date" validate:"omitempty,datetime=2006-01-02"`
-	MoveInDate          string   `json:"move_in_date" validate:"omitempty,datetime=2006-01-02"`
-	MoveOutDate         string   `json:"move_out_date" validate:"omitempty,datetime=2006-01-02"`
-	MonthlyRent         float64  `json:"monthly_rent" validate:"required,min=0"`
-	SecurityDeposit     *float64 `json:"security_deposit" validate:"omitempty,min=0"`
-	DepositStatus       string   `json:"deposit_status" validate:"omitempty,oneof=held partially_returned returned forfeited"`
-	RentDueDay          *int     `json:"rent_due_day" validate:"omitempty,min=1,max=31"`
-	LateFeeAmount       *float64 `json:"late_fee_amount" validate:"omitempty,min=0"`
-	LateFeeGraceDays    *int     `json:"late_fee_grace_days" validate:"omitempty,min=0"`
-	PrimaryResidentName string   `json:"primary_resident_name" validate:"required,min=1,max=200,noctrl"`
-	CoResidents         []string `json:"co_residents" validate:"omitempty,max=10,dive,max=200,noctrl"`
-	EmergencyContact    string   `json:"emergency_contact" validate:"omitempty,max=200,noctrl"`
-	Notes               string   `json:"notes" validate:"omitempty,max=2000,noctrl"`
+	LeaseType            string   `json:"lease_type" validate:"required,oneof=fixed month_to_month"`
+	Status               string   `json:"status" validate:"omitempty,oneof=draft active terminated"`
+	StartDate            string   `json:"start_date" validate:"required,datetime=2006-01-02"`
+	EndDate              string   `json:"end_date" validate:"omitempty,datetime=2006-01-02"`
+	MoveInDate           string   `json:"move_in_date" validate:"omitempty,datetime=2006-01-02"`
+	MoveOutDate          string   `json:"move_out_date" validate:"omitempty,datetime=2006-01-02"`
+	MonthlyRent          float64  `json:"monthly_rent" validate:"required,min=0"`
+	SecurityDeposit      *float64 `json:"security_deposit" validate:"omitempty,min=0"`
+	DepositStatus        string   `json:"deposit_status" validate:"omitempty,oneof=held partially_returned returned forfeited"`
+	RentDueDay           *int     `json:"rent_due_day" validate:"omitempty,min=1,max=31"`
+	LateFeeAmount        *float64 `json:"late_fee_amount" validate:"omitempty,min=0"`
+	LateFeeGraceDays     *int     `json:"late_fee_grace_days" validate:"omitempty,min=0"`
+	PrimaryResidentName  string   `json:"primary_resident_name" validate:"required,min=1,max=200,noctrl"`
+	PrimaryResidentPhone string   `json:"primary_resident_phone" validate:"omitempty,max=50,noctrl"`
+	PrimaryResidentEmail string   `json:"primary_resident_email" validate:"omitempty,max=200,noctrl,email"`
+	CoResidents          []string `json:"co_residents" validate:"omitempty,max=10,dive,max=200,noctrl"`
+	EmergencyContact     string   `json:"emergency_contact" validate:"omitempty,max=200,noctrl"`
+	Notes                string   `json:"notes" validate:"omitempty,max=2000,noctrl"`
 }
 
 func (r *CreateLeaseRequest) Sanitize() {
 	r.PrimaryResidentName = sanitizeString(r.PrimaryResidentName)
+	r.PrimaryResidentPhone = sanitizeString(r.PrimaryResidentPhone)
+	r.PrimaryResidentEmail = sanitizeString(r.PrimaryResidentEmail)
 	r.EmergencyContact = sanitizeString(r.EmergencyContact)
 	r.Notes = sanitizeString(r.Notes)
 	for i, c := range r.CoResidents {
@@ -44,18 +48,20 @@ func (r *CreateLeaseRequest) Sanitize() {
 // the unit page the caller is already on.
 func (r CreateLeaseRequest) ToDomain(unitID uuid.UUID) (domain.CreateLeaseInput, error) {
 	input := domain.CreateLeaseInput{
-		UnitID:              unitID,
-		Type:                domain.LeaseType(r.LeaseType),
-		Status:              domain.LeaseStatus(r.Status),
-		MonthlyRent:         r.MonthlyRent,
-		SecurityDeposit:     r.SecurityDeposit,
-		RentDueDay:          r.RentDueDay,
-		LateFeeAmount:       r.LateFeeAmount,
-		LateFeeGraceDays:    r.LateFeeGraceDays,
-		PrimaryResidentName: r.PrimaryResidentName,
-		CoResidents:         r.CoResidents,
-		EmergencyContact:    r.EmergencyContact,
-		Notes:               r.Notes,
+		UnitID:               unitID,
+		Type:                 domain.LeaseType(r.LeaseType),
+		Status:               domain.LeaseStatus(r.Status),
+		MonthlyRent:          r.MonthlyRent,
+		SecurityDeposit:      r.SecurityDeposit,
+		RentDueDay:           r.RentDueDay,
+		LateFeeAmount:        r.LateFeeAmount,
+		LateFeeGraceDays:     r.LateFeeGraceDays,
+		PrimaryResidentName:  r.PrimaryResidentName,
+		PrimaryResidentPhone: r.PrimaryResidentPhone,
+		PrimaryResidentEmail: r.PrimaryResidentEmail,
+		CoResidents:          r.CoResidents,
+		EmergencyContact:     r.EmergencyContact,
+		Notes:                r.Notes,
 	}
 	if r.DepositStatus != "" {
 		d := domain.DepositStatus(r.DepositStatus)
@@ -101,6 +107,8 @@ type UpdateLeaseRequest struct {
 	LateFeeAmount         *float64 `json:"late_fee_amount" validate:"omitempty,min=0"`
 	LateFeeGraceDays      *int     `json:"late_fee_grace_days" validate:"omitempty,min=0"`
 	PrimaryResidentName   *string  `json:"primary_resident_name" validate:"omitempty,min=1,max=200,noctrl"`
+	PrimaryResidentPhone  *string  `json:"primary_resident_phone" validate:"omitempty,max=50,noctrl"`
+	PrimaryResidentEmail  *string  `json:"primary_resident_email" validate:"omitempty,max=200,noctrl,email"`
 	CoResidents           []string `json:"co_residents" validate:"omitempty,max=10,dive,max=200,noctrl"`
 	EmergencyContact      *string  `json:"emergency_contact" validate:"omitempty,max=200,noctrl"`
 	RenewalStatus         *string  `json:"renewal_status" validate:"omitempty,oneof=not_started offered accepted declined"`
@@ -115,6 +123,12 @@ func (r *UpdateLeaseRequest) Sanitize() {
 	if r.PrimaryResidentName != nil {
 		*r.PrimaryResidentName = sanitizeString(*r.PrimaryResidentName)
 	}
+	if r.PrimaryResidentPhone != nil {
+		*r.PrimaryResidentPhone = sanitizeString(*r.PrimaryResidentPhone)
+	}
+	if r.PrimaryResidentEmail != nil {
+		*r.PrimaryResidentEmail = sanitizeString(*r.PrimaryResidentEmail)
+	}
 	if r.EmergencyContact != nil {
 		*r.EmergencyContact = sanitizeString(*r.EmergencyContact)
 	}
@@ -128,16 +142,18 @@ func (r *UpdateLeaseRequest) Sanitize() {
 
 func (r UpdateLeaseRequest) ToDomain() (domain.UpdateLeaseInput, error) {
 	input := domain.UpdateLeaseInput{
-		MonthlyRent:         r.MonthlyRent,
-		SecurityDeposit:     r.SecurityDeposit,
-		RentDueDay:          r.RentDueDay,
-		LateFeeAmount:       r.LateFeeAmount,
-		LateFeeGraceDays:    r.LateFeeGraceDays,
-		PrimaryResidentName: r.PrimaryResidentName,
-		CoResidents:         r.CoResidents,
-		EmergencyContact:    r.EmergencyContact,
-		Signed:              r.Signed,
-		Notes:               r.Notes,
+		MonthlyRent:          r.MonthlyRent,
+		SecurityDeposit:      r.SecurityDeposit,
+		RentDueDay:           r.RentDueDay,
+		LateFeeAmount:        r.LateFeeAmount,
+		LateFeeGraceDays:     r.LateFeeGraceDays,
+		PrimaryResidentName:  r.PrimaryResidentName,
+		PrimaryResidentPhone: r.PrimaryResidentPhone,
+		PrimaryResidentEmail: r.PrimaryResidentEmail,
+		CoResidents:          r.CoResidents,
+		EmergencyContact:     r.EmergencyContact,
+		Signed:               r.Signed,
+		Notes:                r.Notes,
 	}
 	if r.LeaseType != nil {
 		t := domain.LeaseType(*r.LeaseType)
@@ -220,6 +236,8 @@ type LeaseResponse struct {
 	LateFeeAmount         *float64 `json:"late_fee_amount,omitempty"`
 	LateFeeGraceDays      *int     `json:"late_fee_grace_days,omitempty"`
 	PrimaryResidentName   string   `json:"primary_resident_name"`
+	PrimaryResidentPhone  string   `json:"primary_resident_phone,omitempty"`
+	PrimaryResidentEmail  string   `json:"primary_resident_email,omitempty"`
 	CoResidents           []string `json:"co_residents"`
 	EmergencyContact      string   `json:"emergency_contact,omitempty"`
 	RenewalStatus         string   `json:"renewal_status"`
@@ -234,25 +252,27 @@ type LeaseResponse struct {
 
 func NewLeaseResponse(l *domain.Lease) LeaseResponse {
 	resp := LeaseResponse{
-		ID:                  l.ID.String(),
-		UnitID:              l.UnitID.String(),
-		LeaseType:           string(l.Type),
-		Status:              string(l.Status),
-		DisplayStatus:       string(l.DisplayStatus(time.Now().UTC())),
-		StartDate:           l.StartDate.Format(leaseDateLayout),
-		MonthlyRent:         l.MonthlyRent,
-		SecurityDeposit:     l.SecurityDeposit,
-		RentDueDay:          l.RentDueDay,
-		LateFeeAmount:       l.LateFeeAmount,
-		LateFeeGraceDays:    l.LateFeeGraceDays,
-		PrimaryResidentName: l.PrimaryResidentName,
-		CoResidents:         l.CoResidents,
-		EmergencyContact:    l.EmergencyContact,
-		RenewalStatus:       string(l.RenewalStatus),
-		Signed:              l.Signed,
-		Notes:               l.Notes,
-		CreatedAt:           l.CreatedAt.Format(time.RFC3339),
-		UpdatedAt:           l.UpdatedAt.Format(time.RFC3339),
+		ID:                   l.ID.String(),
+		UnitID:               l.UnitID.String(),
+		LeaseType:            string(l.Type),
+		Status:               string(l.Status),
+		DisplayStatus:        string(l.DisplayStatus(time.Now().UTC())),
+		StartDate:            l.StartDate.Format(leaseDateLayout),
+		MonthlyRent:          l.MonthlyRent,
+		SecurityDeposit:      l.SecurityDeposit,
+		RentDueDay:           l.RentDueDay,
+		LateFeeAmount:        l.LateFeeAmount,
+		LateFeeGraceDays:     l.LateFeeGraceDays,
+		PrimaryResidentName:  l.PrimaryResidentName,
+		PrimaryResidentPhone: l.PrimaryResidentPhone,
+		PrimaryResidentEmail: l.PrimaryResidentEmail,
+		CoResidents:          l.CoResidents,
+		EmergencyContact:     l.EmergencyContact,
+		RenewalStatus:        string(l.RenewalStatus),
+		Signed:               l.Signed,
+		Notes:                l.Notes,
+		CreatedAt:            l.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:            l.UpdatedAt.Format(time.RFC3339),
 	}
 	if l.EndDate != nil {
 		resp.EndDate = l.EndDate.Format(leaseDateLayout)

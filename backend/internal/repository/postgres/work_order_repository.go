@@ -95,6 +95,10 @@ func (r *WorkOrderRepository) ListForOwner(ctx context.Context, opts domain.Work
 		args = append(args, *opts.Filter.PropertyID)
 		where = append(where, fmt.Sprintf("w.property_id = $%d", len(args)))
 	}
+	if opts.Filter.UnitID != nil {
+		args = append(args, *opts.Filter.UnitID)
+		where = append(where, fmt.Sprintf("w.unit_id = $%d", len(args)))
+	}
 	if opts.Filter.Status != nil {
 		args = append(args, *opts.Filter.Status)
 		where = append(where, fmt.Sprintf("w.status = $%d", len(args)))
@@ -120,6 +124,10 @@ func (r *WorkOrderRepository) ListForOwner(ctx context.Context, opts domain.Work
 	}
 	if opts.Filter.Unassigned {
 		where = append(where, "w.assigned_to = ''")
+	}
+	if !opts.PropertyAccess.All {
+		args = append(args, opts.PropertyAccess.PropertyIDs)
+		where = append(where, fmt.Sprintf("w.property_id = ANY($%d)", len(args)))
 	}
 	whereClause := strings.Join(where, " AND ")
 
@@ -225,9 +233,22 @@ func (r *WorkOrderRepository) Delete(ctx context.Context, id uuid.UUID) error {
 // operation that isn't already scoped by a direct owner_id column.
 const bulkOwnerScope = `id = ANY($2) AND property_id IN (SELECT id FROM properties WHERE owner_id = $3)`
 
-func (r *WorkOrderRepository) BulkUpdateStatus(ctx context.Context, ownerID uuid.UUID, ids []uuid.UUID, status domain.WorkOrderStatus) (int, error) {
-	q := `UPDATE work_orders SET status = $1, updated_at = now() WHERE ` + bulkOwnerScope
+// bulkOwnerScopeWithAccess additionally restricts to access.PropertyIDs
+// — appended only when access.All is false, same as every other
+// PropertyAccess WHERE-clause addition in this codebase.
+const bulkOwnerScopeWithAccess = bulkOwnerScope + ` AND property_id = ANY($4)`
 
+func (r *WorkOrderRepository) BulkUpdateStatus(ctx context.Context, ownerID uuid.UUID, ids []uuid.UUID, status domain.WorkOrderStatus, access domain.PropertyAccess) (int, error) {
+	if !access.All {
+		q := `UPDATE work_orders SET status = $1, updated_at = now() WHERE ` + bulkOwnerScopeWithAccess
+		tag, err := r.pool.Exec(ctx, q, status, ids, ownerID, access.PropertyIDs)
+		if err != nil {
+			return 0, fmt.Errorf("bulk update status for %d work orders: %w", len(ids), err)
+		}
+		return int(tag.RowsAffected()), nil
+	}
+
+	q := `UPDATE work_orders SET status = $1, updated_at = now() WHERE ` + bulkOwnerScope
 	tag, err := r.pool.Exec(ctx, q, status, ids, ownerID)
 	if err != nil {
 		return 0, fmt.Errorf("bulk update status for %d work orders: %w", len(ids), err)
@@ -235,9 +256,17 @@ func (r *WorkOrderRepository) BulkUpdateStatus(ctx context.Context, ownerID uuid
 	return int(tag.RowsAffected()), nil
 }
 
-func (r *WorkOrderRepository) BulkReassign(ctx context.Context, ownerID uuid.UUID, ids []uuid.UUID, assignedTo string) (int, error) {
-	q := `UPDATE work_orders SET assigned_to = $1, status = CASE WHEN status = 'new' THEN 'assigned' ELSE status END, updated_at = now() WHERE ` + bulkOwnerScope
+func (r *WorkOrderRepository) BulkReassign(ctx context.Context, ownerID uuid.UUID, ids []uuid.UUID, assignedTo string, access domain.PropertyAccess) (int, error) {
+	if !access.All {
+		q := `UPDATE work_orders SET assigned_to = $1, status = CASE WHEN status = 'new' THEN 'assigned' ELSE status END, updated_at = now() WHERE ` + bulkOwnerScopeWithAccess
+		tag, err := r.pool.Exec(ctx, q, assignedTo, ids, ownerID, access.PropertyIDs)
+		if err != nil {
+			return 0, fmt.Errorf("bulk reassign %d work orders: %w", len(ids), err)
+		}
+		return int(tag.RowsAffected()), nil
+	}
 
+	q := `UPDATE work_orders SET assigned_to = $1, status = CASE WHEN status = 'new' THEN 'assigned' ELSE status END, updated_at = now() WHERE ` + bulkOwnerScope
 	tag, err := r.pool.Exec(ctx, q, assignedTo, ids, ownerID)
 	if err != nil {
 		return 0, fmt.Errorf("bulk reassign %d work orders: %w", len(ids), err)

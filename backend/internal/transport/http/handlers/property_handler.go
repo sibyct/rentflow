@@ -64,7 +64,8 @@ func (h *PropertyHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	p, err := h.svc.GetProperty(r.Context(), id, claims.UserID)
+	access, _ := middleware.PropertyAccessFromContext(r.Context())
+	p, err := h.svc.GetProperty(r.Context(), id, claims.UserID, access)
 	if err != nil {
 		response.WriteError(w, r, err)
 		return
@@ -75,7 +76,7 @@ func (h *PropertyHandler) Get(w http.ResponseWriter, r *http.Request) {
 	// found successfully shouldn't 500 out because the unit-stats lookup
 	// hit an unexpected error, so this degrades to the zero-value stats
 	// dto.NewPropertyResponse already set rather than failing the request.
-	if stats, err := h.unitSvc.GetPropertyUnitStats(r.Context(), p.ID, claims.UserID); err == nil {
+	if stats, err := h.unitSvc.GetPropertyUnitStats(r.Context(), p.ID, claims.UserID, access); err == nil {
 		resp = resp.WithUnitStats(stats)
 	}
 
@@ -94,6 +95,7 @@ func (h *PropertyHandler) List(w http.ResponseWriter, r *http.Request) {
 		response.WriteError(w, r, err)
 		return
 	}
+	opts.PropertyAccess, _ = middleware.PropertyAccessFromContext(r.Context())
 
 	properties, total, err := h.svc.ListProperties(r.Context(), opts)
 	if err != nil {
@@ -152,7 +154,8 @@ func (h *PropertyHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	p, err := h.svc.UpdateProperty(r.Context(), id, claims.UserID, input)
+	access, _ := middleware.PropertyAccessFromContext(r.Context())
+	p, err := h.svc.UpdateProperty(r.Context(), id, claims.UserID, input, access)
 	if err != nil {
 		response.WriteError(w, r, err)
 		return
@@ -175,7 +178,8 @@ func (h *PropertyHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.svc.DeleteProperty(r.Context(), id, claims.UserID); err != nil {
+	access, _ := middleware.PropertyAccessFromContext(r.Context())
+	if err := h.svc.DeleteProperty(r.Context(), id, claims.UserID, access); err != nil {
 		response.WriteError(w, r, err)
 		return
 	}
@@ -205,7 +209,8 @@ func (h *PropertyHandler) BulkUpdateStatus(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	n, err := h.svc.BulkUpdateStatus(r.Context(), claims.UserID, ids, status)
+	access, _ := middleware.PropertyAccessFromContext(r.Context())
+	n, err := h.svc.BulkUpdateStatus(r.Context(), claims.UserID, ids, status, access)
 	if err != nil {
 		response.WriteError(w, r, err)
 		return
